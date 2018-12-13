@@ -6,13 +6,13 @@ Please follow notebooks for steps
 - [Pytorch-pretrained-BERT-AzureML](PyTorch)
 - [Tensorflow-BERT-AzureML](TensorFlow)
 
-# **Introduction**
+## **Introduction**
 
 In the natural language processing (NLP) domain, pre-trained language representations have traditionally been a key topic for a few important use cases, such as [named entity recognition](https://arxiv.org/pdf/cs/0306050.pdf) (Sang and Meulder, 2003), [question answering](https://arxiv.org/pdf/1606.05250.pdf)(Rajpurkar et al., 2016), and [syntactic parsing](https://nlp.stanford.edu/~mcclosky/papers/dmcc-naacl-2010.pdf) (McClosky et al., 2010).
 
 The intuition for utilizing a pre-trained model is simple: A deep neural network that is trained on large corpus, say all the Wikipedia data, should have enough knowledge about the underlying relationships between different words and sentences. It should also be easily adapted to a different domain, such as medical or financial domain, with better performance than training from scratch.
 
-Recently, a paper called &quot;[BERT: Bidirectional Encoder Representations from Transformers](https://arxiv.org/abs/1810.04805)&quot; was published by Devlin, et al, which achieves new state-of-the-art results on 11 NLP tasks, using the pre-trained approach mentioned above. In this technical blog post, we want to show how customers can efficiently and easily fine-tune BERT for their custom applications using Azure Machine Learning Services. We open sourced the code on [GitHub](https://github.com/lliimsft/AzureML-BERT).
+Recently, a paper called &quot;[BERT: Bidirectional Encoder Representations from Transformers](https://arxiv.org/abs/1810.04805)&quot; was published by Devlin, et al, which achieves new state-of-the-art results on 11 NLP tasks, using the pre-trained approach mentioned above. In this technical blog post, we want to show how customers can efficiently and easily fine-tune BERT for their custom applications using Azure Machine Learning Services. We open sourced the code on [GitHub](https://github.com/Microsoft/AzureML-BERT).
 
 ## **Intuition behind BERT**
 
@@ -20,29 +20,39 @@ The intuition behind the new language model, BERT, is simple yet powerful. Resea
 
 - **Masked language model: ** To understand the relationship between words. The key idea is to mask some of the words in the sentence (around 15 percent) and use those masked words as labels to force the models to learn the relationship between words. For example, the original sentence would be:
 
+```
 The man went to the store. He bought a gallon of milk.
+```
 
 And the input/label pair to the language model is:
 
+```
 Input: The man went to the [MASK1]. He bought a [MASK2] of milk.
 
 Labels: [MASK1] = store; [MASK2] = gallon
+```
 
 - **Sentence prediction task:**  To understand the relationships between sentences. This task asks the model to predict whether sentence B, is likely to be the next sentence following a given sentence A. Using the same example above, we can generate training data like:
 
+```
 Sentence A: The man went to the store.
 
 Sentence B: He bought a gallon of milk.
 
 Label: IsNextSentence
+```
 
 ## **Applying BERT to customized dataset**
 
 After BERT is trained on a large corpus (say all the available English Wikipedia) using the above steps, the assumption is that because the dataset is huge, the model can inherit a lot of knowledge about the English language. The next step is to fine-tune the model on different tasks, hoping the model can adapt to a new domain more quickly. The key idea is to use the large BERT model trained above and add different input/output layers for different types of tasks. For example, you might want to do sentiment analysis for a customer support department. This is a classification problem, so you might need to add an output classification layer (as shown on the left in the figure below) and structure your input. For a different task, say question answering, you might need to use a different input/output layer, where the input is the question and the corresponding paragraph, while the output is the start/end answer span for the question (see the figure on the right). In each case, the way BERT is designed can enable data scientists to plug in different layers easily so BERT can be adapted to different tasks.
 
+![Adapting BERT for different tasks](https://azurecomcdn.azureedge.net/mediahandler/acomblog/media/Default/blog/39717ecf-8274-46c4-862d-21ca377b1957.png)
+
 _Figure 1. Adapting BERT for different tasks (_[_Source_](https://arxiv.org/pdf/1810.04805.pdf)_)_
 
 The image below shows the result for one of the most popular dataset in NLP field, the [Stanford Question Answering Dataset (SQuAD)](https://rajpurkar.github.io/SQuAD-explorer/).
+
+![Reported BERT performance on SQuAD 1.1 dataset](https://azurecomcdn.azureedge.net/mediahandler/acomblog/media/Default/blog/c37ee936-a5d2-4878-b8e2-ffc02a2797f2.png)
 
 _Figure 2. Reported BERT performance on SQuAD 1.1 dataset (_[_Source_](https://arxiv.org/pdf/1810.04805.pdf)_)._
 
@@ -52,6 +62,7 @@ Depending on the specific task types, you might need to add very different input
 
 We are going to demonstrate different experiments on different datasets. In addition to tuning different hyperparameters for various use cases, Azure Machine Learning service can be used to manage the entire lifecycle of the experiments. Azure Machine Learning service provides an end-to-end cloud-based machine learning environment, so customers can develop, train, test, deploy, manage, and track machine learning models, as shown below. It also has full support for open-source technologies, such as PyTorch and TensorFlow which we will be using later.
 
+![Azure Machine Learning Service Overview](https://azurecomcdn.azureedge.net/mediahandler/acomblog/media/Default/blog/07ebbbb6-0fd4-40a6-b4e6-c9d0b11cf159.png)
 _Figure 3. Azure Machine Learning Service Overview_
 
 ## **What is in the notebook**
@@ -133,6 +144,7 @@ estimator = PyTorch(source_directory=project_folder,
 
 For each experiment, customers can watch the progress for different hyperparameter combinations. For example, the picture below shows the mean loss over time using different hyperparameter combinations. Some of the experiments can be terminated early if the training loss doesn&#39;t meet expectations (like the top red curve).
 
+![Mean loss for training data for different runs, as well as early termination](https://azurecomcdn.azureedge.net/mediahandler/acomblog/media/Default/blog/bdbe13c8-0011-49de-a019-4731cd3951cb.png)
 _Figure 4. Mean loss for training data for different runs, as well as early termination_
 
 For more information on how to use the Azure ML&#39;s automated hyperparameter tuning feature, please visit our documentation on [tuning hyperparameters](https://docs.microsoft.com/en-us/azure/machine-learning/service/how-to-tune-hyperparameters). And for how to track all the experiments, please visit the documentation on [how to track experiments and metrics](https://docs.microsoft.com/en-us/azure/machine-learning/service/how-to-track-experiments).
@@ -159,6 +171,7 @@ _Table 2. Training time per epoch for SQuAD dataset_
 
 After all the experiments are done, the Azure Machine Learning service SDK also provides a summary visualization on the selected metrics and the corresponding hyperparameter(s). Below is an example on how learning rate affects validation loss. Throughout the experiments, the learning rate has been changed from around 7e-6 (the far left) to around 1e-3 (the far right), and the best learning rate with lowest validation loss is around 3.1e-4. This chart can also be leveraged to evaluate other metrics that customers want to optimize.
 
+![Learning rate versus validation loss](https://azurecomcdn.azureedge.net/mediahandler/acomblog/media/Default/blog/189651c7-05e1-4381-81b7-32d871b360b7.png)
 _Figure 5. Learning rate versus validation loss_
 
 ## **Summary**
