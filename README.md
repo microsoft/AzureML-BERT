@@ -18,7 +18,7 @@ Recently, a paper called &quot;[BERT: Bidirectional Encoder Representations from
 
 The intuition behind the new language model, BERT, is simple yet powerful. Researchers believe that a large enough deep neural network model, with large enough training corpus, could capture the relationship behind the corpus. In NLP domain, it is hard to get a large annotated corpus, so researchers used a novel technique to get a lot of training data. Instead of having human beings label the corpus and feed it into neural networks, researchers use the large Internet available corpus – [BookCorpus](http://yknzhu.wixsite.com/mbweb) (Zhu, Kiros et al) and English Wikipedia (800M and 2,500M words respectively). Two approaches, each for different language tasks, are used to generate the labels for the language model.
 
-- **Masked language model: ** To understand the relationship between words. The key idea is to mask some of the words in the sentence (around 15 percent) and use those masked words as labels to force the models to learn the relationship between words. For example, the original sentence would be:
+- **Masked language model:** To understand the relationship between words. The key idea is to mask some of the words in the sentence (around 15 percent) and use those masked words as labels to force the models to learn the relationship between words. For example, the original sentence would be:
 
 ```
 The man went to the store. He bought a gallon of milk.
