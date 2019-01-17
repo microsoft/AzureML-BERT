@@ -29,15 +29,14 @@ import numpy as np
 import torch
 from torch.utils.data import TensorDataset, DataLoader, RandomSampler, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
+import torch.multiprocessing as mp
 
 from pytorch_pretrained_bert.tokenization import BertTokenizer
 from pytorch_pretrained_bert.modeling import BertForSequenceClassification
 from pytorch_pretrained_bert.optimization import BertAdam
 from pytorch_pretrained_bert.file_utils import PYTORCH_PRETRAINED_BERT_CACHE
-
+from azureml_bert_util import *
 from azureml.core.run import Run
-# get the Azure ML run object
-run = Run.get_context()
 
 logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s', 
                     datefmt = '%m/%d/%Y %H:%M:%S',
@@ -342,29 +341,6 @@ def set_optimizer_params_grad(named_params_optimizer, named_params_model, test_n
             param_opti.grad = None
     return is_nan
 
-def get_azureml_node_rank_info(process_count_per_node):
-    
-    init_method = 'tcp://127.0.0.1:6000'
-    if 'MASTER_NODE' in os.environ and os.environ['MASTER_NODE'] != '':
-        init_method = 'tcp://' + os.environ['MASTER_NODE']
-
-    rank = -1
-    local_rank = -1
-    world_size = 1
-    if os.environ.get('OMPI_COMM_WORLD_RANK') is not None:
-        rank = int(os.environ.get('OMPI_COMM_WORLD_RANK'))
-    elif os.environ.get('PMI_RANK') is not None:
-        rank = int(os.environ.get('PMI_RANK'))
-    if rank != -1:
-        local_rank = rank % process_count_per_node
-
-    if os.environ.get('OMPI_COMM_WORLD_SIZE') is not None:
-        world_size = int(os.environ.get('OMPI_COMM_WORLD_SIZE'))
-    elif os.environ.get('PMI_SIZE') is not None:
-         world_size = int(os.environ.get('PMI_SIZE'))
-
-    return init_method, world_size, rank, local_rank
-
 
 def main():
     parser = argparse.ArgumentParser()
@@ -461,30 +437,36 @@ def main():
 
     args = parser.parse_args()
 
+    processes = []
+    for local_rank in range(args.process_count_per_node):
+        p = mp.Process(target=main_worker, args=(local_rank, args.process_count_per_node, args))
+        p.start()
+        processes.append(p)
+
+    for p in processes:
+        p.join()
+
+
+def main_worker(local_rank, process_count_per_node, args):
+    run = Run.get_context()
+    
     processors = {
         "cola": ColaProcessor,
         "mnli": MnliProcessor,
         "mrpc": MrpcProcessor,
     }
 
-    init_method, world_size, rank, local_rank = get_azureml_node_rank_info(args.process_count_per_node)
+    torch.cuda.set_device(local_rank)
+    device = torch.device("cuda", local_rank)
+    node_count, world_size, node_rank, rank = init_communicator(local_rank=local_rank, 
+                                                process_count_per_node=process_count_per_node)
+    is_master = rank == 0
+    logger.info("node count: {}, local rank: {}, global rank: {}, fp16: {}".format(node_count, local_rank, rank, args.fp16))
 
-    if local_rank == -1 or args.no_cuda:
-        device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
-        n_gpu = torch.cuda.device_count()
-    else:
-        n_gpu = 1
-        device = torch.device("cuda", local_rank)
-        if world_size > 1:
-            torch.distributed.init_process_group(backend='nccl', 
-                                    init_method=init_method,
-                                    world_size=world_size, 
-                                    rank=rank)
-        if args.fp16:
-            logger.info("16-bits training currently not supported in distributed training")
-            args.fp16 = False # (see https://github.com/pytorch/pytorch/pull/13496)
-    logger.info("device: {} n_gpu: {}, distributed training: {}, 16-bits trainiing: {}".format(
-        device, n_gpu, bool(local_rank != -1), args.fp16))
+    if os.path.exists(args.output_dir) and os.listdir(args.output_dir):
+        raise ValueError("Output directory () already exists and is not empty.")
+    os.makedirs(args.output_dir, exist_ok=True)
+    output_model_file = os.path.join(args.output_dir, "pytorch_model.bin")
 
     if args.gradient_accumulation_steps < 1:
         raise ValueError("Invalid gradient_accumulation_steps parameter: {}, should be >= 1".format(
@@ -496,9 +478,6 @@ def main():
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
-    if n_gpu > 0:
-        torch.cuda.manual_seed_all(args.seed)
-        args.train_batch_size = args.train_batch_size * n_gpu
 
     if not args.do_train and not args.do_eval:
         raise ValueError("At least one of `do_train` or `do_eval` must be True.")
@@ -527,38 +506,47 @@ def main():
     if args.fp16:
         model.half()
     model.to(device)
-    if local_rank != -1 and world_size > 1:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank],
-                                                          output_device=local_rank)
-    elif n_gpu > 1:
-        model = torch.nn.DataParallel(model)
 
-    # Prepare optimizer
-    if args.fp16:
-        param_optimizer = [(n, param.clone().detach().to('cpu').float().requires_grad_()) \
-                            for n, param in model.named_parameters()]
-    elif args.optimize_on_cpu:
-        param_optimizer = [(n, param.clone().detach().to('cpu').requires_grad_()) \
-                            for n, param in model.named_parameters()]
-    else:
-        param_optimizer = list(model.named_parameters())
-    no_decay = ['bias', 'gamma', 'beta']
-    optimizer_grouped_parameters = [
-        {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay_rate': 0.01},
-        {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay_rate': 0.0}
-        ]
-    t_total = num_train_steps
-    if local_rank != -1:
-        t_total = t_total // world_size
-    optimizer = BertAdam(optimizer_grouped_parameters,
-                         lr=args.learning_rate,
-                         warmup=args.warmup_proportion,
-                         t_total=t_total)
-    if is_master:
-        run.log('lr', np.float(args.learning_rate))
 
     global_step = 0
     if args.do_train:
+ 
+        param_optimizer = list(model.named_parameters())
+
+        # hack to remove pooler, which is not used
+        # thus it produce None grad that break apex
+        param_optimizer = [n for n in param_optimizer if 'pooler' not in n[0]]
+
+        no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
+        optimizer_grouped_parameters = [
+            {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay': 0.01},
+            {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+            ]
+        t_total = num_train_steps // world_size
+
+        if args.fp16:
+            try:
+                from apex.optimizers import FP16_Optimizer
+                from apex.optimizers import FusedAdam
+            except ImportError:
+                raise ImportError("Please install apex from https://www.github.com/nvidia/apex to run this.")
+
+            optimizer = FusedAdam(optimizer_grouped_parameters,
+                                lr=args.learning_rate,
+                                bias_correction=False,
+                                max_grad_norm=1.0)
+            if args.loss_scale == 0:
+                optimizer = FP16_Optimizer(optimizer, dynamic_loss_scale=True)
+            else:
+                optimizer = FP16_Optimizer(optimizer, static_loss_scale=args.loss_scale)
+        else:
+            optimizer = BertAdam(optimizer_grouped_parameters,
+                            lr=args.learning_rate,
+                            warmup=args.warmup_proportion,
+                            t_total=t_total)
+        if is_master:
+            run.log('lr', np.float(args.learning_rate))
+ 
         train_features = convert_examples_to_features(
             train_examples, label_list, args.max_seq_length, tokenizer)
         logger.info("***** Running training *****")
@@ -575,52 +563,31 @@ def main():
         else:
             train_sampler = RandomSampler(train_data)
         train_dataloader = DataLoader(train_data, sampler=train_sampler, batch_size=args.train_batch_size)
+
+        tr_loss = 0
         model.train()
         for _ in trange(int(args.num_train_epochs), desc="Epoch"):
-            tr_loss = 0
-            tr_steps = 0
             for step, batch in enumerate(tqdm(train_dataloader, desc="Iteration")):
                 batch = tuple(t.to(device) for t in batch)
                 input_ids, input_mask, segment_ids, label_ids = batch
-                if (step + 1) % args.gradient_accumulation_steps == 0:
-                    loss = model(input_ids, segment_ids, input_mask, label_ids)
-                else:
-                    loss = model.module(input_ids, segment_ids, input_mask, label_ids)
-                if n_gpu > 1:
-                    loss = loss.mean() # mean() to average on multi-gpu.
-                if args.fp16 and args.loss_scale != 1.0:
-                    # rescale loss for fp16 training
-                    # see https://docs.nvidia.com/deeplearning/sdk/mixed-precision-training/index.html
-                    loss = loss * args.loss_scale
-                if args.gradient_accumulation_steps > 1:
-                    loss = loss / args.gradient_accumulation_steps
+                loss = model(input_ids, segment_ids, input_mask, label_ids)
+                loss = loss / args.gradient_accumulation_steps
                 loss.backward()
                 tr_loss += loss.item()
-                tr_steps += 1
-                if (step + 1) % args.gradient_accumulation_steps == 0:
-                    if args.fp16 or args.optimize_on_cpu:
-                        if args.fp16 and args.loss_scale != 1.0:
-                            # scale down gradients for fp16 training
-                            for param in model.parameters():
-                                if param.grad is not None:
-                                    param.grad.data = param.grad.data / args.loss_scale
-                        is_nan = set_optimizer_params_grad(param_optimizer, model.named_parameters(), test_nan=True)
-                        if is_nan:
-                            logger.info("FP16 TRAINING: Nan in gradients, reducing loss scaling")
-                            args.loss_scale = args.loss_scale / 2
-                            model.zero_grad()
-                            continue
-                        optimizer.step()
-                        copy_optimizer_params_to_model(model.named_parameters(), param_optimizer)
-                    else:
-                        optimizer.step()
+                if (step + 1) % args.gradient_accumulation_steps == 0 or global_step + 1 == t_total:
+                    sync_grads(model, local_rank, node_count, process_count_per_node, args.fp16)
+                    lr_this_step = args.learning_rate * warmup_linear(global_step/t_total, args.warmup_proportion)
+                    for param_group in optimizer.param_groups:
+                        param_group['lr'] = lr_this_step
+                    optimizer.step()
                     model.zero_grad()
-                    global_step += 1
-                if is_master and (tr_steps + 1) % args.step_per_log == 0:
+                global_step += 1
+                if is_master and (global_step + 1) % args.step_per_log == 0:
                     run.log('train_loss', np.float(tr_loss * args.gradient_accumulation_steps / args.step_per_log))
-                    tr_steps = 0
                     tr_loss = 0
-
+        if is_master:
+            # Save a trained model
+            torch.save(model.state_dict(), output_model_file)
 
     if args.do_eval and is_master:
         eval_examples = processor.get_dev_examples(args.data_dir)
@@ -665,6 +632,7 @@ def main():
             logger.info("  %s = %s", key, str(result[key]))
             run.log(key, str(result[key]))
 
+    wait_for_all_wokrers(local_rank)
 
 
 if __name__ == "__main__":

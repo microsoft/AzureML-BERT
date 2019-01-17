@@ -42,9 +42,7 @@ from pytorch_pretrained_bert.file_utils import PYTORCH_PRETRAINED_BERT_CACHE
 
 from azureml.core.run import Run
 from evaluate_squad import evaluate
-
-# get the Azure ML run object
-run = Run.get_context()
+from azureml_bert_util import *
 
 logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s', 
                     datefmt = '%m/%d/%Y %H:%M:%S',
@@ -52,7 +50,7 @@ logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(messa
 logger = logging.getLogger(__name__)
 
 class SquadExample(object):
-    """A single training/test example for simple sequence classification."""
+    """A single training/test example for the Squad dataset."""
 
     def __init__(self,
                  qas_id,
@@ -114,7 +112,7 @@ class InputFeatures(object):
 
 def read_squad_examples(input_file, is_training):
     """Read a SQuAD json file into a list of SquadExample."""
-    with open(input_file, "r") as reader:
+    with open(input_file, "r", encoding='utf-8') as reader:
         input_data = json.load(reader)["data"]
 
     def is_whitespace(c):
@@ -676,59 +674,6 @@ def _compute_softmax(scores):
         probs.append(score / total_sum)
     return probs
 
-def copy_optimizer_params_to_model(named_params_model, named_params_optimizer):
-    """ Utility function for optimize_on_cpu and 16-bits training.
-        Copy the parameters optimized on CPU/RAM back to the model on GPU
-    """
-    for (name_opti, param_opti), (name_model, param_model) in zip(named_params_optimizer, named_params_model):
-        if name_opti != name_model:
-            logger.error("name_opti != name_model: {} {}".format(name_opti, name_model))
-            raise ValueError
-        param_model.data.copy_(param_opti.data)
-
-def set_optimizer_params_grad(named_params_optimizer, named_params_model, test_nan=False):
-    """ Utility function for optimize_on_cpu and 16-bits training.
-        Copy the gradient of the GPU parameters to the CPU/RAMM copy of the model
-    """
-    is_nan = False
-    for (name_opti, param_opti), (name_model, param_model) in zip(named_params_optimizer, named_params_model):
-        if name_opti != name_model:
-            logger.error("name_opti != name_model: {} {}".format(name_opti, name_model))
-            raise ValueError
-        if param_model.grad is not None:
-            if test_nan and torch.isnan(param_model.grad).sum() > 0:
-                is_nan = True
-            if param_opti.grad is None:
-                param_opti.grad = torch.nn.Parameter(param_opti.data.new().resize_(*param_opti.data.size()))
-            param_opti.grad.data.copy_(param_model.grad.data)
-        else:
-            param_opti.grad = None
-    return is_nan
-
-
-def get_azureml_node_rank_info(process_count_per_node):
-    
-    init_method = 'tcp://127.0.0.1:6000'
-    if 'MASTER_NODE' in os.environ and os.environ['MASTER_NODE'] != '':
-        init_method = 'tcp://' + os.environ['MASTER_NODE']
-
-    rank = -1
-    local_rank = -1
-    world_size = 1
-    if os.environ.get('OMPI_COMM_WORLD_RANK') is not None:
-        rank = int(os.environ.get('OMPI_COMM_WORLD_RANK'))
-    elif os.environ.get('PMI_RANK') is not None:
-        rank = int(os.environ.get('PMI_RANK'))
-    if rank != -1:
-        local_rank = rank % process_count_per_node
-
-    if os.environ.get('OMPI_COMM_WORLD_SIZE') is not None:
-        world_size = int(os.environ.get('OMPI_COMM_WORLD_SIZE'))
-    elif os.environ.get('PMI_SIZE') is not None:
-         world_size = int(os.environ.get('PMI_SIZE'))
-
-    return init_method, world_size, rank, local_rank
-
 
 def main():
     parser = argparse.ArgumentParser()
@@ -773,74 +718,62 @@ def main():
     parser.add_argument("--verbose_logging", default=False, action='store_true',
                         help="If true, all of the warnings related to data processing will be printed. "
                                 "A number of warnings are expected for a normal SQuAD evaluation.")
-    parser.add_argument("--no_cuda",
-                        default=False,
-                        action='store_true',
-                        help="Whether not to use CUDA when available")
     parser.add_argument('--seed', 
                         type=int, 
                         default=42,
                         help="random seed for initialization")
-    parser.add_argument('--gradient_accumulation_steps',
+    parser.add_argument('--init_gradient_accumulation_steps',
                         type=int,
                         default=1,
-                        help="Number of updates steps to accumulate before performing a backward/update pass.")
+                        help="Initial number of updates steps to accumulate before performing a backward/update pass.")
+    parser.add_argument('--target_gradient_accumulation_steps',
+                        type=int,
+                        default=1,
+                        help="Target number of updates steps to accumulate before performing a backward/update pass.")
+    parser.add_argument('--accumulation_warmup_proportion',default=0.2, type=float,
+                        help="Proportion of training to ramp up gradient_accumulation_steps for. E.g., 0.1 = 10% ")
     parser.add_argument("--do_lower_case",
                         default=True,
                         action='store_true',
                         help="Whether to lower case the input text. True for uncased models, False for cased models.")
-    parser.add_argument('--optimize_on_cpu',
-                        default=False,
-                        action='store_true',
-                        help="Whether to perform optimization and keep the optimizer averages on CPU")
+    parser.add_argument('--step_per_log',
+                        type=int, default=100,
+                        help='Number of updates steps to log metrics.')
     parser.add_argument('--fp16',
                         default=False,
                         action='store_true',
                         help="Whether to use 16-bit float precision instead of 32-bit")
     parser.add_argument('--loss_scale',
-                        type=float, default=128,
-                        help='Loss scaling, positive power of 2 values can improve fp16 convergence.')
-    parser.add_argument('--step_per_log',
-                        type=int, default=100,
-                        help='Number of updates steps to log metrics.')
-
+                        type=float, default=0,
+                        help="Loss scaling to improve fp16 numeric stability. Only used when fp16 set to True.\n"
+                             "0 (default value): dynamic loss scaling.\n"
+                             "Positive power of 2: static loss scaling value.\n")
 
     args = parser.parse_args()
+    processes = []
+    for local_rank in range(args.process_count_per_node):
+        p = mp.Process(target=main_worker, args=(local_rank, args.process_count_per_node, args))
+        p.start()
+        processes.append(p)
 
-    init_method, world_size, rank, local_rank = get_azureml_node_rank_info(args.process_count_per_node)
+    for p in processes:
+        p.join()
 
-    if local_rank == -1 or args.no_cuda:
-        device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
-        n_gpu = torch.cuda.device_count()
-    else:
-        n_gpu = 1
-        device = torch.device("cuda", local_rank)
-        if world_size > 1:
-            torch.distributed.init_process_group(backend='nccl', 
-                                    init_method=init_method,
-                                    world_size=world_size, 
-                                    rank=rank)
-        if args.fp16:
-            logger.info("16-bits training currently not supported in distributed training")
-            args.fp16 = False # (see https://github.com/pytorch/pytorch/pull/13496)
-    logger.info("device: {} n_gpu: {}, distributed training: {}, 16-bits trainiing: {}".format(
-        device, n_gpu, bool(local_rank != -1), args.fp16))
 
-    is_master = local_rank == -1 or rank == 0
+def main_worker(local_rank, process_count_per_node, args):
+    # get the Azure ML run object
+    run = Run.get_context()
 
-    if args.gradient_accumulation_steps < 1:
-        raise ValueError("Invalid gradient_accumulation_steps parameter: {}, should be >= 1".format(
-                            args.gradient_accumulation_steps))
-
-    if local_rank == -1:
-        args.train_batch_size = int(args.train_batch_size / args.gradient_accumulation_steps)
+    torch.cuda.set_device(local_rank)
+    device = torch.device("cuda", local_rank)
+    node_count, world_size, node_rank, rank = init_communicator(local_rank=local_rank, 
+                                                process_count_per_node=process_count_per_node)
+    is_master = rank == 0
+    logger.info("node count: {}, local rank: {}, global rank: {}, fp16: {}".format(node_count, local_rank, rank, args.fp16))
 
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
-    if n_gpu > 0:
-        torch.cuda.manual_seed_all(args.seed)
-        args.train_batch_size = args.train_batch_size * n_gpu
 
     if not args.do_train and not args.do_predict:
         raise ValueError("At least one of `do_train` or `do_predict` must be True.")
@@ -857,58 +790,63 @@ def main():
     if os.path.exists(args.output_dir) and os.listdir(args.output_dir):
         raise ValueError("Output directory () already exists and is not empty.")
     os.makedirs(args.output_dir, exist_ok=True)
+    output_model_file = os.path.join(args.output_dir, "pytorch_model.bin")
 
     tokenizer = BertTokenizer.from_pretrained(args.bert_model)
-
-    train_examples = None
-    num_train_steps = None
-    if args.do_train:
-        train_examples = read_squad_examples(
-            input_file=args.train_file, is_training=True)
-        num_train_steps = int(
-            len(train_examples) / args.train_batch_size / args.gradient_accumulation_steps * args.num_train_epochs)
-
 
     # Prepare model
     model = BertForQuestionAnswering.from_pretrained(args.bert_model,
                 cache_dir=PYTORCH_PRETRAINED_BERT_CACHE / 'distributed_{}'.format(local_rank))
+    
     if args.fp16:
         model.half()
-    model.to(device)
-    if local_rank != -1 and world_size > 1:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank],
-                                                          output_device=local_rank)
-    elif n_gpu > 1:
-        model = torch.nn.DataParallel(model)
-
-    # Prepare optimizer
-    if args.fp16:
-        param_optimizer = [(n, param.clone().detach().to('cpu').float().requires_grad_()) \
-                            for n, param in model.named_parameters()]
-    elif args.optimize_on_cpu:
-        param_optimizer = [(n, param.clone().detach().to('cpu').requires_grad_()) \
-                            for n, param in model.named_parameters()]
-    else:
-       param_optimizer = list(model.named_parameters())
-    no_decay = ['bias', 'gamma', 'beta']
-    optimizer_grouped_parameters = [
-        {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay_rate': 0.01},
-        {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay_rate': 0.0}
-        ]
-    t_total = num_train_steps
-    if local_rank != -1:
-        t_total = t_total // world_size
-    optimizer = BertAdam(optimizer_grouped_parameters,
-                         lr=args.learning_rate,
-                         warmup=args.warmup_proportion,
-                         t_total=t_total)
-    if is_master:
-        run.log('lr', np.float(args.learning_rate))
     
-    global_step = 0
+    model.to(device)
+
+    broadcast_parameters(model, local_rank, node_count)
     if args.do_train:
+        train_examples = read_squad_examples(input_file=args.train_file, is_training=True)
+        num_train_steps = int(len(train_examples) / args.train_batch_size * args.num_train_epochs)
+
+        param_optimizer = list(model.named_parameters())
+
+        # hack to remove pooler, which is not used
+        # thus it produce None grad that break apex
+        param_optimizer = [n for n in param_optimizer if 'pooler' not in n[0]]
+
+        no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
+        optimizer_grouped_parameters = [
+            {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay': 0.01},
+            {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+            ]
+        t_total = num_train_steps // world_size
+
+        if args.fp16:
+            try:
+                from apex.optimizers import FP16_Optimizer
+                from apex.optimizers import FusedAdam
+            except ImportError:
+                raise ImportError("Please install apex from https://www.github.com/nvidia/apex to run this.")
+
+            optimizer = FusedAdam(optimizer_grouped_parameters,
+                                lr=args.learning_rate,
+                                bias_correction=False,
+                                max_grad_norm=1.0)
+            if args.loss_scale == 0:
+                optimizer = FP16_Optimizer(optimizer, dynamic_loss_scale=True)
+            else:
+                optimizer = FP16_Optimizer(optimizer, static_loss_scale=args.loss_scale)
+        else:
+            optimizer = BertAdam(optimizer_grouped_parameters,
+                            lr=args.learning_rate,
+                            warmup=args.warmup_proportion,
+                            t_total=t_total)
+
+        if is_master:
+            run.log('lr', np.float(args.learning_rate))
+
         cached_train_features_file = args.train_file+'_{0}_{1}_{2}_{3}'.format(
-            args.bert_model, str(args.max_seq_length), str(args.doc_stride), str(args.max_query_length))
+            list(filter(None, args.bert_model.split('/'))).pop(), str(args.max_seq_length), str(args.doc_stride), str(args.max_query_length))
         train_features = None
         try:
             with open(cached_train_features_file, "rb") as reader:
@@ -937,61 +875,53 @@ def main():
         all_end_positions = torch.tensor([f.end_position for f in train_features], dtype=torch.long)
         train_data = TensorDataset(all_input_ids, all_input_mask, all_segment_ids,
                                    all_start_positions, all_end_positions)
-        if local_rank != -1 and world_size > 1:
-            train_sampler = DistributedSampler(train_data)
+        if world_size > 1:
+            train_sampler = DistributedSampler(train_data,num_replicas=world_size, rank=rank)
         else:
             train_sampler = RandomSampler(train_data)
+
         train_dataloader = DataLoader(train_data, sampler=train_sampler, batch_size=args.train_batch_size)
 
+        global_step = 0
+        tr_loss = 0
         model.train()
+        accumulation_step = args.init_gradient_accumulation_steps
         for _ in trange(int(args.num_train_epochs), desc="Epoch"):
-            tr_loss = 0
-            tr_step = 0
             for step, batch in enumerate(tqdm(train_dataloader, desc="Iteration")):
-                if n_gpu == 1:
-                    batch = tuple(t.to(device) for t in batch) # multi-gpu does scattering it-self
+                batch = tuple(t.to(device) for t in batch)
                 input_ids, input_mask, segment_ids, start_positions, end_positions = batch
-                if (step + 1) % args.gradient_accumulation_steps == 0:
-                    loss = model(input_ids, segment_ids, input_mask, start_positions, end_positions)
-                else:
-                    loss = model.module(input_ids, segment_ids, input_mask, start_positions, end_positions)
-                if n_gpu > 1:
-                    loss = loss.mean() # mean() to average on multi-gpu.
-                if args.fp16 and args.loss_scale != 1.0:
-                    # rescale loss for fp16 training
-                    # see https://docs.nvidia.com/deeplearning/sdk/mixed-precision-training/index.html
-                    loss = loss * args.loss_scale
-                if args.gradient_accumulation_steps > 1:
-                    loss = loss / args.gradient_accumulation_steps
-                loss.backward()
+                loss = model(input_ids, segment_ids, input_mask, start_positions, end_positions)
                 tr_loss += loss.item()
-                tr_step += 1
-                if (step + 1) % args.gradient_accumulation_steps == 0:
-                    if args.fp16 or args.optimize_on_cpu:
-                        if args.fp16 and args.loss_scale != 1.0:
-                            # scale down gradients for fp16 training
-                            for param in model.parameters():
-                                if param.grad is not None:
-                                    param.grad.data = param.grad.data / args.loss_scale
-                        is_nan = set_optimizer_params_grad(param_optimizer, model.named_parameters(), test_nan=True)
-                        if is_nan:
-                            logger.info("FP16 TRAINING: Nan in gradients, reducing loss scaling")
-                            args.loss_scale = args.loss_scale / 2
-                            model.zero_grad()
-                            continue
-                        optimizer.step()
-                        copy_optimizer_params_to_model(model.named_parameters(), param_optimizer)
-                    else:
-                        optimizer.step()
+                loss /= accumulation_step
+                if args.fp16:
+                    optimizer.backward(loss)
+                else:
+                    loss.backward()
+                if (step + 1) % accumulation_step == 0 or global_step + 1 == t_total:
+                    sync_grads(model, local_rank, node_count, process_count_per_node, args.fp16)
+                    lr_this_step = args.learning_rate * warmup_linear(global_step/t_total, args.warmup_proportion)
+                    for param_group in optimizer.param_groups:
+                        param_group['lr'] = lr_this_step
+                    optimizer.step()
                     model.zero_grad()
-                    global_step += 1
-                if is_master and (tr_step + 1) % args.step_per_log == 0:
-                    run.log('train_loss', np.float(tr_loss * args.gradient_accumulation_steps / args.step_per_log))
-                    tr_step = 0
+                    accumulation_step = adjust_gradient_accumulation_steps(
+                        global_step/t_total, args.init_gradient_accumulation_steps,
+                        args.target_gradient_accumulation_steps, args.accumulation_warmup_proportion)
+                global_step += 1
+                if is_master and (global_step + 1) % args.step_per_log == 0:
+                    run.log('train_loss', np.float(tr_loss / args.step_per_log))
                     tr_loss = 0
-
+        if is_master:
+            # Save a trained model
+            torch.save(model.state_dict(), output_model_file)
+                        
 
     if args.do_predict and is_master:
+        # Load a trained model that you have fine-tuned
+        model_state_dict = torch.load(output_model_file)
+        model = BertForQuestionAnswering.from_pretrained(args.bert_model, state_dict=model_state_dict)
+        model.to(device)
+
         eval_examples = read_squad_examples(
             input_file=args.predict_file, is_training=False)
         eval_features = convert_examples_to_features(
@@ -1015,6 +945,7 @@ def main():
         # Run prediction for full data
         eval_sampler = SequentialSampler(eval_data)
         eval_dataloader = DataLoader(eval_data, sampler=eval_sampler, batch_size=args.predict_batch_size)
+
         model.eval()
         all_results = []
         logger.info("Start evaluating")
@@ -1032,24 +963,27 @@ def main():
                 eval_feature = eval_features[example_index.item()]
                 unique_id = int(eval_feature.unique_id)
                 all_results.append(RawResult(unique_id=unique_id,
-                                            start_logits=start_logits,
-                                            end_logits=end_logits))
+                                             start_logits=start_logits,
+                                             end_logits=end_logits))
         output_prediction_file = os.path.join(args.output_dir, "predictions.json")
         output_nbest_file = os.path.join(args.output_dir, "nbest_predictions.json")
         write_predictions(eval_examples, eval_features, all_results,
-                        args.n_best_size, args.max_answer_length,
-                        args.do_lower_case, output_prediction_file,
-                        output_nbest_file, args.verbose_logging)
+                          args.n_best_size, args.max_answer_length,
+                          args.do_lower_case, output_prediction_file,
+                          output_nbest_file, args.verbose_logging)
 
         with open(args.predict_file) as predict_file:
             dataset_json = json.load(predict_file)
             dataset = dataset_json['data']
         with open(output_prediction_file) as prediction_file:
             predictions = json.load(prediction_file)
-        result = evaluate(dataset, predictions)    
+        
+        result = evaluate(dataset, predictions)
         for key in result.keys():
             logger.info("  %s = %s", key, str(result[key]))
-            run.log(key, str(result[key]))               
+            run.log(key, result[key])
+
+    wait_for_all_wokrers(local_rank)
 
 
 if __name__ == "__main__":
