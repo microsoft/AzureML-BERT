@@ -437,17 +437,6 @@ def main():
 
     args = parser.parse_args()
 
-    processes = []
-    for local_rank in range(args.process_count_per_node):
-        p = mp.Process(target=main_worker, args=(local_rank, args.process_count_per_node, args))
-        p.start()
-        processes.append(p)
-
-    for p in processes:
-        p.join()
-
-
-def main_worker(local_rank, process_count_per_node, args):
     run = Run.get_context()
     
     processors = {
@@ -456,12 +445,15 @@ def main_worker(local_rank, process_count_per_node, args):
         "mrpc": MrpcProcessor,
     }
 
+    comm = DistributedCommunicator(accumulation_step=args.gradient_accumulation_steps)
+    rank = comm.rank
+    local_rank = comm.local_rank
+    world_size = comm.world_size
+    is_master = rank == 0
+    logger.info("world size: {}, local rank: {}, global rank: {}, fp16: {}".format(world_size, local_rank, rank, args.fp16))
+
     torch.cuda.set_device(local_rank)
     device = torch.device("cuda", local_rank)
-    node_count, world_size, node_rank, rank = init_communicator(local_rank=local_rank, 
-                                                process_count_per_node=process_count_per_node)
-    is_master = rank == 0
-    logger.info("node count: {}, local rank: {}, global rank: {}, fp16: {}".format(node_count, local_rank, rank, args.fp16))
 
     if os.path.exists(args.output_dir) and os.listdir(args.output_dir):
         raise ValueError("Output directory () already exists and is not empty.")
@@ -506,9 +498,8 @@ def main_worker(local_rank, process_count_per_node, args):
     if args.fp16:
         model.half()
     model.to(device)
+    comm.register_model(model, args.fp16)
 
-
-    global_step = 0
     if args.do_train:
  
         param_optimizer = list(model.named_parameters())
@@ -567,23 +558,21 @@ def main_worker(local_rank, process_count_per_node, args):
         tr_loss = 0
         model.train()
         for _ in trange(int(args.num_train_epochs), desc="Epoch"):
-            for step, batch in enumerate(tqdm(train_dataloader, desc="Iteration")):
+            for _, batch in enumerate(tqdm(train_dataloader, desc="Iteration")):
                 batch = tuple(t.to(device) for t in batch)
                 input_ids, input_mask, segment_ids, label_ids = batch
                 loss = model(input_ids, segment_ids, input_mask, label_ids)
                 loss = loss / args.gradient_accumulation_steps
                 loss.backward()
                 tr_loss += loss.item()
-                if (step + 1) % args.gradient_accumulation_steps == 0 or global_step + 1 == t_total:
-                    sync_grads(model, local_rank, node_count, process_count_per_node, args.fp16)
-                    lr_this_step = args.learning_rate * warmup_linear(global_step/t_total, args.warmup_proportion)
+                if comm.synchronize():
+                    lr_this_step = args.learning_rate * warmup_linear(comm.global_step/t_total, args.warmup_proportion)
                     for param_group in optimizer.param_groups:
                         param_group['lr'] = lr_this_step
                     optimizer.step()
                     model.zero_grad()
-                global_step += 1
-                if is_master and (global_step + 1) % args.step_per_log == 0:
-                    run.log('train_loss', np.float(tr_loss * args.gradient_accumulation_steps / args.step_per_log))
+                if is_master and (comm.global_step + 1) % args.step_per_log == 0:
+                    run.log('train_loss', np.float(tr_loss / args.step_per_log))
                     tr_loss = 0
         if is_master:
             # Save a trained model
@@ -631,8 +620,6 @@ def main_worker(local_rank, process_count_per_node, args):
         for key in sorted(result.keys()):
             logger.info("  %s = %s", key, str(result[key]))
             run.log(key, str(result[key]))
-
-    wait_for_all_wokrers(local_rank)
 
 
 if __name__ == "__main__":

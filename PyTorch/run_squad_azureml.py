@@ -704,8 +704,6 @@ def main():
     parser.add_argument("--learning_rate", default=5e-5, type=float, help="The initial learning rate for Adam.")
     parser.add_argument("--num_train_epochs", default=3.0, type=float,
                         help="Total number of training epochs to perform.")
-    parser.add_argument("--process_count_per_node", default=1, type=int,
-                        help="Total number of process count to launch per node.")                        
     parser.add_argument("--warmup_proportion", default=0.1, type=float,
                         help="Proportion of training to perform linear learning rate warmup for. E.g., 0.1 = 10% "
                                 "of training.")
@@ -750,26 +748,19 @@ def main():
                              "Positive power of 2: static loss scaling value.\n")
 
     args = parser.parse_args()
-    processes = []
-    for local_rank in range(args.process_count_per_node):
-        p = mp.Process(target=main_worker, args=(local_rank, args.process_count_per_node, args))
-        p.start()
-        processes.append(p)
 
-    for p in processes:
-        p.join()
-
-
-def main_worker(local_rank, process_count_per_node, args):
     # get the Azure ML run object
     run = Run.get_context()
 
+    comm = DistributedCommunicator(accumulation_step=args.init_gradient_accumulation_steps)
+    rank = comm.rank
+    local_rank = comm.local_rank
+    world_size = comm.world_size
+
     torch.cuda.set_device(local_rank)
     device = torch.device("cuda", local_rank)
-    node_count, world_size, node_rank, rank = init_communicator(local_rank=local_rank, 
-                                                process_count_per_node=process_count_per_node)
     is_master = rank == 0
-    logger.info("node count: {}, local rank: {}, global rank: {}, fp16: {}".format(node_count, local_rank, rank, args.fp16))
+    logger.info("world size: {}, local rank: {}, global rank: {}, fp16: {}".format(world_size, local_rank, rank, args.fp16))
 
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -802,8 +793,7 @@ def main_worker(local_rank, process_count_per_node, args):
         model.half()
     
     model.to(device)
-
-    broadcast_parameters(model, local_rank, node_count)
+    comm.register_model(model, args.fp16)
     if args.do_train:
         train_examples = read_squad_examples(input_file=args.train_file, is_training=True)
         num_train_steps = int(len(train_examples) / args.train_batch_size * args.num_train_epochs)
@@ -859,7 +849,7 @@ def main_worker(local_rank, process_count_per_node, args):
                 doc_stride=args.doc_stride,
                 max_query_length=args.max_query_length,
                 is_training=True)
-            if local_rank == -1 or rank == 0:
+            if rank == 0:
                 logger.info("  Saving train features into cached file %s", cached_train_features_file)
                 with open(cached_train_features_file, "wb") as writer:
                     train_features = pickle.dump(train_features, writer)
@@ -881,33 +871,29 @@ def main_worker(local_rank, process_count_per_node, args):
             train_sampler = RandomSampler(train_data)
 
         train_dataloader = DataLoader(train_data, sampler=train_sampler, batch_size=args.train_batch_size)
-
-        global_step = 0
-        tr_loss = 0
+        global_step, tr_loss = 0, 0
         model.train()
-        accumulation_step = args.init_gradient_accumulation_steps
         for _ in trange(int(args.num_train_epochs), desc="Epoch"):
-            for step, batch in enumerate(tqdm(train_dataloader, desc="Iteration")):
+            for _, batch in enumerate(tqdm(train_dataloader, desc="Iteration")):
                 batch = tuple(t.to(device) for t in batch)
                 input_ids, input_mask, segment_ids, start_positions, end_positions = batch
                 loss = model(input_ids, segment_ids, input_mask, start_positions, end_positions)
                 tr_loss += loss.item()
-                loss /= accumulation_step
                 if args.fp16:
                     optimizer.backward(loss)
                 else:
                     loss.backward()
-                if (step + 1) % accumulation_step == 0 or global_step + 1 == t_total:
-                    sync_grads(model, local_rank, node_count, process_count_per_node, args.fp16)
+                global_step += 1
+                if comm.synchronize():
                     lr_this_step = args.learning_rate * warmup_linear(global_step/t_total, args.warmup_proportion)
                     for param_group in optimizer.param_groups:
                         param_group['lr'] = lr_this_step
                     optimizer.step()
                     model.zero_grad()
-                    accumulation_step = adjust_gradient_accumulation_steps(
+                    comm.set_accumulation_step(adjust_gradient_accumulation_steps(
                         global_step/t_total, args.init_gradient_accumulation_steps,
-                        args.target_gradient_accumulation_steps, args.accumulation_warmup_proportion)
-                global_step += 1
+                        args.target_gradient_accumulation_steps, args.accumulation_warmup_proportion))
+
                 if is_master and (global_step + 1) % args.step_per_log == 0:
                     run.log('train_loss', np.float(tr_loss / args.step_per_log))
                     tr_loss = 0
@@ -982,8 +968,6 @@ def main_worker(local_rank, process_count_per_node, args):
         for key in result.keys():
             logger.info("  %s = %s", key, str(result[key]))
             run.log(key, result[key])
-
-    wait_for_all_wokrers(local_rank)
 
 
 if __name__ == "__main__":

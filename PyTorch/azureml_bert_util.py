@@ -1,4 +1,4 @@
-from horovod.torch.mpi_ops import allreduce
+from horovod.torch.mpi_ops import allreduce, allreduce_async_, synchronize
 from horovod.torch.compression import Compression
 import horovod.torch as hvd
 import torch
@@ -18,79 +18,110 @@ except ImportError:
     from torch._utils import _unflatten_dense_tensors as unflatten
 
 
-def adjust_gradient_accumulation_steps(x, initial_steps, target_steps, warmup):
-    return min(max(int(x/warmup*target_steps), initial_steps), target_steps)
-
-
-def init_communicator(local_rank, process_count_per_node):
-    torch.distributed.init_process_group(backend='nccl', init_method='tcp://127.0.0.1:4321',
-                            world_size=process_count_per_node, 
-                            rank=local_rank)
-
-    node_info_tensor = torch.IntTensor(2).fill_(-1).cuda(local_rank)
-    if local_rank == 0:
-        try:
-            hvd.init()
-            node_info_tensor[0].fill_(hvd.size())
-            node_info_tensor[1].fill_(hvd.rank())
-        except:
-            node_info_tensor[0].fill_(1)
-            node_info_tensor[1].fill_(0)
-    
-    torch.distributed.broadcast_multigpu([node_info_tensor], 0)
-
-    node_count = node_info_tensor[0].item()
-    node_rank = node_info_tensor[1].item()
-    
-    world_size = process_count_per_node * node_count
-    rank = local_rank + node_rank * process_count_per_node
-    return node_count, world_size, node_rank, rank
-
-
-def sync_grads(model, local_rank, node_count, ngpu, fp16=False):
-    if node_count == 1 and ngpu == 1: return
-
-    grads = [param.grad.data for param in model.parameters() if param.grad is not None]
-    buckets = OrderedDict()
-    for tensor in grads:
-        tp = tensor.type()
-        if tp not in buckets:
-            buckets[tp] = []
-        buckets[tp].append(tensor)
-  
-    compression = hvd.Compression.fp16 if fp16 else hvd.Compression.none
-    for tp in buckets:
-        bucket = buckets[tp]
-        coalesced = flatten(bucket) / ngpu / node_count 
-        if node_count > 1:
-            # intra-node grad reduce to device 0
-            torch.distributed.reduce_multigpu([coalesced], 0)
-            # inter-node grad all-reduce in device 0
-            if local_rank == 0:
-                coalesced = allreduce(tensor=coalesced, average=False, compression=compression)
-            # intra-node grad broadcast from device 0
-            torch.distributed.broadcast_multigpu([coalesced], 0)
-        else:
-            torch.distributed.all_reduce_multigpu([coalesced])
-        for buf, synced in zip(bucket, unflatten(coalesced, bucket)):
-            buf.copy_(synced)
-
-
-def broadcast_parameters(model, local_rank, node_count):
-    if local_rank == 0 and node_count > 1:
-        hvd.broadcast_parameters(model.state_dict(), root_rank=0)
-    for param in model.parameters():
-        torch.distributed.broadcast_multigpu([param], 0)
-
-
-def wait_for_all_wokrers(local_rank):
-    if local_rank == 0:
-        allreduce(torch.IntTensor(1).fill_(-1))
-    torch.distributed.broadcast_multigpu([torch.IntTensor(1).fill_(-1).cuda(local_rank)], 0)
-    time.sleep(5)
-
-
 def warmup_linear(x, warmup=0.002):
     if x < warmup:
         return x/warmup
     return 1.0 - x
+
+
+def adjust_gradient_accumulation_steps(x, initial_steps, target_steps, warmup):
+    return min(max(int(x/warmup*target_steps), initial_steps), target_steps)
+
+
+class DistributedCommunicator:
+    def __init__(self, accumulation_step=1):
+        hvd.init()
+        self.local_rank = hvd.local_rank()
+        self.world_size = hvd.size()
+        self.rank = hvd.rank()
+        self.n_gpu = torch.cuda.device_count()
+        self.node_count = self.world_size // self.n_gpu
+        self.accumulation_step = accumulation_step
+        self.count_down = accumulation_step - 1
+        self._multi_node = self.node_count > 1 
+        if not self._multi_node:
+            # use PyTorch build-in NCCL backend for single node training
+            torch.distributed.init_process_group(backend='nccl', init_method='tcp://127.0.0.1:6000',
+                                world_size=self.n_gpu,  rank=self.local_rank)
+
+
+    def register_model(self, model, fp16):
+        #  broadcast model parameters
+        if self.node_count > 1:
+            hvd.broadcast_parameters(model.state_dict(), root_rank=0)
+        else:
+            for param in model.parameters():
+                torch.distributed.broadcast_multigpu([param], 0)
+
+        # register hook for reduce when backpropagate
+        self._parameter_names = {v: k for k, v in sorted(model.named_parameters())}
+        self._handles = {}
+        self._requires_update = set()
+        self._grad_accs = []
+        self._grad = []
+        self._compression = hvd.Compression.fp16 if fp16 else hvd.Compression.none
+        for p in model.parameters():
+            if p.requires_grad:
+                p.grad = p.data.new(p.size()).zero_()
+                self._requires_update.add(p)
+                p_tmp = p.expand_as(p)
+                grad_acc = p_tmp.grad_fn.next_functions[0][0]
+                grad_acc.register_hook(self._make_hook(p))
+                self._grad_accs.append(grad_acc)
+
+
+    def _allreduce_tensor(self, p):
+        assert p not in self._handles
+        assert not p.grad.requires_grad
+        tensor = p.grad
+        name = self._parameter_names.get(p)
+        if self._multi_node: 
+            tensor_compressed, ctx = self._compression.compress(tensor)
+            handle = allreduce_async_(tensor_compressed, average=True, name=name)
+            self._handles[p] = (handle, ctx)
+        else:
+            self._handles[p] = tensor
+
+
+    def _make_hook(self, p):
+        def hook(*ignore):
+            if self.count_down == 0:
+                self._allreduce_tensor(p)
+        return hook
+
+
+    def synchronize(self):
+        synced = False
+        if self.count_down == 0:
+            missing_p = self._requires_update - set(self._handles.keys())
+            for p in missing_p:
+                self._allreduce_tensor(p)
+
+            if self._multi_node:
+                for p, value in self._handles.items():
+                    handle, ctx = value
+                    output = synchronize(handle)
+                    p.grad.set_(self._compression.decompress(output, ctx) / self.accumulation_step)
+            else:
+                buckets = OrderedDict()
+                for tensor in self._handles.values():
+                    tp = tensor.type()
+                    if tp not in buckets:
+                        buckets[tp] = []
+                    buckets[tp].append(tensor)
+                for tp in buckets:
+                    bucket = buckets[tp]
+                    coalesced = flatten(bucket) / self.world_size / self.accumulation_step
+                    torch.distributed.all_reduce_multigpu([coalesced])
+                    for buf, synced in zip(bucket, unflatten(coalesced, bucket)):
+                        buf.copy_(synced)
+            self._handles.clear()
+            synced = True
+            self.count_down = self.accumulation_step
+
+        self.count_down -= 1
+        return synced
+
+    def set_accumulation_step(self, accumulation_step):
+        self.accumulation_step = accumulation_step
+        self.count_down = self.accumulation_step - 1
