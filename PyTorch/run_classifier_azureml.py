@@ -555,7 +555,7 @@ def main():
             train_sampler = RandomSampler(train_data)
         train_dataloader = DataLoader(train_data, sampler=train_sampler, batch_size=args.train_batch_size)
 
-        tr_loss = 0
+        global_step, tr_loss = 0, 0
         model.train()
         for _ in trange(int(args.num_train_epochs), desc="Epoch"):
             for _, batch in enumerate(tqdm(train_dataloader, desc="Iteration")):
@@ -564,14 +564,15 @@ def main():
                 loss = model(input_ids, segment_ids, input_mask, label_ids)
                 loss = loss / args.gradient_accumulation_steps
                 loss.backward()
+                global_step += 1
                 tr_loss += loss.item()
                 if comm.synchronize():
-                    lr_this_step = args.learning_rate * warmup_linear(comm.global_step/t_total, args.warmup_proportion)
+                    lr_this_step = args.learning_rate * warmup_linear(global_step/t_total, args.warmup_proportion)
                     for param_group in optimizer.param_groups:
                         param_group['lr'] = lr_this_step
                     optimizer.step()
                     model.zero_grad()
-                if is_master and (comm.global_step + 1) % args.step_per_log == 0:
+                if is_master and (global_step + 1) % args.step_per_log == 0:
                     run.log('train_loss', np.float(tr_loss / args.step_per_log))
                     tr_loss = 0
         if is_master:
