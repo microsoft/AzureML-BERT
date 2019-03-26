@@ -328,3 +328,8 @@ ASALocalRun/
 
 # MFractors (Xamarin productivity tool) working folder 
 .mfractor/
+TensorFlow/.ipynb_checkpoints/Tensorflow-BERT-AzureML-checkpoint.ipynb
+PyTorch/.ipynb_checkpoints/Pretrained-BERT-SQuAD-checkpoint.ipynb
+PyTorch/aml_config/BERTtrainconfig.json
+TensorFlow/aml_config/BERT_AML_config.json
+TensorFlow/bert/
