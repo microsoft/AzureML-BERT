@@ -1,0 +1,19 @@
+name: AzureML-BERT
+channels:
+  - pytorch
+  - conda-forge
+dependencies:
+  - python=3.6
+  - cudatoolkit=9.0 
+  - matplotlib
+  - nb_conda_kernels
+  - numpy
+  - pandas
+  - pytorch
+  - tensorflow-gpu
+  - torchvision
+  - pip:
+    - azure-cli==2.0.44
+    - azureml-sdk[notebooks, automl]==1.0.21
+    - papermill==0.14.2
+    - prompt_toolkit==2.0.7
