@@ -333,3 +333,6 @@ PyTorch/.ipynb_checkpoints/Pretrained-BERT-SQuAD-checkpoint.ipynb
 PyTorch/aml_config/BERTtrainconfig.json
 TensorFlow/aml_config/BERT_AML_config.json
 TensorFlow/bert/
+PyTorch/aml_config/BERT_AML_config.json
+PyTorch/squad/dev-v1.1.json
+PyTorch/squad/train-v1.1.json
