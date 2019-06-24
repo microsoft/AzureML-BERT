@@ -5,6 +5,7 @@ This notebook contains an end-to-end walkthrough of using [Azure Machine Learnin
 We provide two set of notebooks: one for PyTorch, and another one for TensorFlow. Please follow the notebooks below for more information:
 - [Pytorch-pretrained-BERT-AzureML](PyTorch)
 - [Tensorflow-BERT-AzureML](TensorFlow)
+- [Named Entity Recognition using BERT](PyTorch/Pretrained-BERT-NER.ipynb)  (Updated on 6/17/2019)
 
 ## **Introduction**
 
