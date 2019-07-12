@@ -337,3 +337,6 @@ PyTorch/aml_config/BERT_AML_config.json
 PyTorch/squad/dev-v1.1.json
 PyTorch/squad/train-v1.1.json
 PyTorch/pytorch-pretrained-BERT/
+PyTorch/.azureml/
+PyTorch/.ipynb_checkpoints/
+
