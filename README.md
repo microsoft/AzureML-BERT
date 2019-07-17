@@ -31,7 +31,7 @@ Jupyter notebooks can be used to use AzureML Python SDK and submit pretrain and 
 ###### PyTorch Notebooks
 |Activity |Notebook |
 |:---|:------|
-|Pretrain | [BERT_Pretrain.ipynb](./pretrain/pytorch/notebooks/BERT_Pretrain.ipynb) |
+|Pretrain | [BERT_Pretrain.ipynb](./pretrain/PyTorch/notebooks/BERT_Pretrain.ipynb) |
 | [GLUE](https://www.nyu.edu/projects/bowman/glue.pdf) finetune/evaluate | [BERT_Eval_GLUE.ipynb](./finetune/PyTorch/notebooks/BERT_Eval_GLUE.ipynb) |
 
 ###### TensorFlow Notebooks
