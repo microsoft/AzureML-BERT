@@ -1,10 +1,10 @@
 # Finetune natural language processing models using Azure Machine Learning service
 
-This notebook contains an end-to-end walkthrough of using [Azure Machine Learning Service](https://docs.microsoft.com/en-us/azure/machine-learning/service/) to finetune [BERT model](https://github.com/google-research/bert). See more details in this blogpost: https://azure.microsoft.com/en-us/blog/fine-tune-natural-language-processing-models-using-azure-machine-learning-service/
+This part of the repo contains a walkthrough of using [Azure Machine Learning Service](https://docs.microsoft.com/en-us/azure/machine-learning/service/) to finetune [BERT model](https://github.com/google-research/bert). See more details in this blogpost: https://azure.microsoft.com/en-us/blog/fine-tune-natural-language-processing-models-using-azure-machine-learning-service/
 
 We provide two set of notebooks: one for PyTorch, and another one for TensorFlow. Please follow the notebooks below for more information:
-- [Pytorch-pretrained-BERT-AzureML](PyTorch)
-- [Tensorflow-BERT-AzureML](TensorFlow)
+- [GLUE eval using BERT](PyTorch/notebooks/BERT_Eval_GLUE.ipynb)
+- [Tensorflow-BERT-AzureML](TensorFlow/notebooks/Tensorflow-BERT-AzureML.ipynb)
 - [Named Entity Recognition using BERT](PyTorch/notebooks/Pretrained-BERT-NER.ipynb)  (Updated on 6/17/2019)
 
 
