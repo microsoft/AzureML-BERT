@@ -110,15 +110,6 @@ Using the Azure Machine Learning service, customers can achieve 85 percent evalu
 
 _Table 1. Training time per epoch for MRPC in GLUE dataset_
 
-For SQuAD 1.1, customers can achieve around 88.3 F1 score and 81.2 Exact Match (EM) score. It requires 2 epochs using BERT base model, and the time for each epoch is shown below:
-
-| **GPU#** | **1** | **2** | **4** |
-| --- | --- | --- | --- |
-| **K80 (NC Family)** | 16,020 s/epoch | 8,820 s/epoch | 4,020 s/epoch |
-| **V100 (NCv3 Family)** | 2,940 s/epoch | 1,393 s/epoch | 735 s/epoch |
-
-_Table 2. Training time per epoch for SQuAD dataset_
-
 After all the experiments are done, the Azure Machine Learning service SDK also provides a summary visualization on the selected metrics and the corresponding hyperparameter(s). Below is an example on how learning rate affects validation loss. Throughout the experiments, the learning rate has been changed from around 7e-6 (the far left) to around 1e-3 (the far right), and the best learning rate with lowest validation loss is around 3.1e-4. This chart can also be leveraged to evaluate other metrics that customers want to optimize.
 
 ![Learning rate versus validation loss](https://azurecomcdn.azureedge.net/mediahandler/acomblog/media/Default/blog/189651c7-05e1-4381-81b7-32d871b360b7.png)
@@ -126,7 +117,7 @@ _Figure 5. Learning rate versus validation loss_
 
 ## **Summary**
 
-In this blog post, we showed how customers can fine-tune BERT easily using the Azure Machine Learning service, as well as topics such as using distributed settings and tuning hyperparameters for the corresponding dataset. We also showed some preliminary results to demonstrate how to use Azure Machine Learning service to fine tune the NLP models. All the code is [available on the GitHub repository](https://github.com/Microsoft/AzureML-BERT). Please let us know if there are any questions or comments by raising an issue in the GitHub repo.
+In this repo, we showed how customers can fine-tune BERT easily using the Azure Machine Learning service, as well as topics such as using distributed settings and tuning hyperparameters for the corresponding dataset. We also showed some preliminary results to demonstrate how to use Azure Machine Learning service to fine tune the NLP models. All the code is [available on the GitHub repository](https://github.com/Microsoft/AzureML-BERT). Please let us know if there are any questions or comments by raising an issue in the GitHub repo.
 
 ### **References**
 
