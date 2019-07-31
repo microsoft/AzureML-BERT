@@ -31,14 +31,21 @@ from tqdm import tqdm, trange
 
 import numpy as np
 import torch
+import sys
+
 from torch.utils.data import TensorDataset, DataLoader, RandomSampler, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
+sys.path.append("./finetune/")
+from evaluate_squad import evaluate
 
 from pytorch_pretrained_bert.tokenization import whitespace_tokenize, BasicTokenizer, BertTokenizer
 from pytorch_pretrained_bert.modeling import BertForQuestionAnswering
 from pytorch_pretrained_bert.optimization import BertAdam
 from pytorch_pretrained_bert.file_utils import PYTORCH_PRETRAINED_BERT_CACHE
-from azureml_adapter import set_environment_variables_for_nccl_backend, get_local_rank
+
+
+sys.path.append("./pretrain/PyTorch/")
+from azureml_adapter import set_environment_variables_for_nccl_backend, get_local_rank, get_global_size, get_local_size, get_world_size
 from azureml.core.run import Run
 
 run = Run.get_context()
@@ -721,7 +728,8 @@ def main():
                         "bert-base-multilingual-cased, bert-base-chinese.")
     parser.add_argument("--output_dir", default=None, type=str, required=True,
                         help="The output directory where the model checkpoints and predictions will be written.")
-
+    parser.add_argument("--model_file_location", default=None, type=str, required=True,
+                    help="The directory in the blob storage which contains data and config files.")
     ## Other parameters
     parser.add_argument("--train_file", default=None, type=str, help="SQuAD json for training. E.g., train-v1.1.json")
     parser.add_argument("--predict_file", default=None, type=str,
@@ -782,12 +790,16 @@ def main():
 
     args = parser.parse_args()
     
-    set_environment_variables_for_nccl_backend()
+    global_size = get_global_size()
+    local_size = get_local_size()	
+
+    set_environment_variables_for_nccl_backend(local_size == global_size)
 
     local_rank = get_local_rank()
 
     is_distributed = bool(local_rank != -1)
 
+    args.model_file = os.path.join(args.model_file_location, args.model_file)
 
     if not is_distributed or args.no_cuda:
         device = torch.device(
@@ -847,7 +859,7 @@ def main():
 
     if args.model_file is not "0":
         logger.info(f"Loading Pretrained Bert Encoder from: {args.model_file}")
-        bert_state_dict = torch.load(args.model_file)
+        bert_state_dict = torch.load(args.model_file, map_location=torch.device("cpu"))
         model.bert.load_state_dict(bert_state_dict)
         logger.info(f"Pretrained Bert Encoder Loaded from: {args.model_file}")
     
@@ -880,8 +892,8 @@ def main():
         ]
 
     t_total = num_train_steps
-    if local_rank != -1:
-        t_total = t_total // torch.distributed.get_world_size()
+    if args.do_train and local_rank != -1:
+        t_total = t_total // get_world_size()
     if args.fp16:
         try:
             from apex.optimizers import FP16_Optimizer
@@ -1030,6 +1042,17 @@ def main():
                           args.n_best_size, args.max_answer_length,
                           args.do_lower_case, output_prediction_file,
                           output_nbest_file, args.verbose_logging)
+        with open(args.predict_file) as predict_file:
+            dataset_json = json.load(predict_file)
+            dataset = dataset_json['data']
+        with open(output_prediction_file) as prediction_file:
+            predictions = json.load(prediction_file)
+        
+        result = evaluate(dataset, predictions)
+        for key in result.keys():
+            logger.info("  %s = %s", key, str(result[key]))
+            run.log(key, result[key])
+
 
 
 if __name__ == "__main__":
