@@ -24,7 +24,7 @@ from pytorch_pretrained_bert.tokenization import BertTokenizer
 from pytorch_pretrained_bert.optimization import BertAdam
 from optimization import warmup_linear_decay_exp
 from azureml_adapter import set_environment_variables_for_nccl_backend, get_local_rank, get_global_size, get_local_size
-from sources import PretrainingDataCreator, TokenInstance, WikiNBookCorpusPretrainingDataCreator
+from sources import PretrainingDataCreator, TokenInstance, GenericPretrainingDataCreator
 from sources import WikiPretrainingDataCreator
 from configuration import BertJobConfiguration
 
@@ -101,23 +101,6 @@ def train(index):
     i += 1
 
     logger.info("Training on Wikipedia dataset")
-
-    if train_on_book_corpus:
-        bc_pretrain_dataset = PreTrainingDataset(tokenizer=tokenizer,
-                                                 folder=job_config.get_book_corpus_pretrain_dataset_path(),
-                                                 logger=logger, max_seq_length=max_seq_length,
-                                                 index=index, data_type=PretrainDataType.BOOK_CORPUS,
-                                                 max_predictions_per_seq=max_predictions_per_seq,
-                                                 masked_lm_prob=masked_lm_prob)
-        datalengths.append(len(bc_pretrain_dataset))
-        dataloaders[i] = get_dataloader(bc_pretrain_dataset)
-
-        num_batches_in_dataset = get_effective_batch(len(bc_pretrain_dataset))
-        batchs_per_dataset.append(num_batches_in_dataset)
-        logger.info('Bookcorpus data file: Number of samples {}, number of batches required to process these samples: {}'.format(len(bc_pretrain_dataset), num_batches_in_dataset))
-        
-        i += 1
-        logger.info("Training on Book Corpus")
 
     total_length = sum(datalengths)
 
@@ -272,11 +255,6 @@ if __name__ == '__main__':
                         type=str,
                         default='False',
                         help="This is the path to the TAR file which contains model+opt state_dict() checkpointed.")
-
-    parser.add_argument('--train_on_book_corpus',
-                        type=str,
-                        default='False',
-                        help="Whether to train on book corpus as well")
     
     parser.add_argument('--use_multigpu_with_single_device_per_process',
                         type=str,
@@ -289,7 +267,6 @@ if __name__ == '__main__':
     fp16 = str2bool(args.fp16)
     accumulate_gradients = str2bool(args.accumulate_gradients)
     use_pretrain = str2bool(args.use_pretrain)
-    train_on_book_corpus = str2bool(args.train_on_book_corpus)
     use_multigpu_with_single_device_per_process = str2bool(args.use_multigpu_with_single_device_per_process)
 
     path= args.path

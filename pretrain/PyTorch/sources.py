@@ -175,7 +175,7 @@ class PretrainingDataCreator:
         return instances
 
 
-class WikiNBookCorpusPretrainingDataCreator(PretrainingDataCreator):
+class GenericPretrainingDataCreator(PretrainingDataCreator):
     def __init__(self, path, tokenizer: BertTokenizer,  max_seq_length: int = 512, readin: int = 2000000, dupe_factor: int = 6, small_seq_prob: float = 0.1):
         self.dupe_factor = dupe_factor
         self.max_seq_length = max_seq_length
