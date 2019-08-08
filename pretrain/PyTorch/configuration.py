@@ -1,19 +1,24 @@
+# flake8: noqa
 import json
 
 
 # TODO better json handling
 class BertJobConfiguration:
     def __init__(self, config_file_path):
-        self.config = json.load(open(config_file_path, 'r', encoding='utf-8'))
+        self.config = json.load(open(config_file_path, "r", encoding="utf-8"))
 
     # TODO improve this implementation
     def replace_path_placeholders(self, files_location):
-        self.config['data']['datasets'] = {key: value.replace('placeholder/', files_location)
-                                      for (key, value) in self.config['data']['datasets'].items()}
-        self.config['validation']['path'] = self.config['validation']['path'].replace('placeholder/', files_location)
+        self.config["data"]["datasets"] = {
+            key: value.replace("placeholder/", files_location)
+            for (key, value) in self.config["data"]["datasets"].items()
+        }
+        self.config["validation"]["path"] = self.config["validation"][
+            "path"
+        ].replace("placeholder/", files_location)
 
     def get_name(self):
-        return self.config['name']
+        return self.config["name"]
 
     def get_token_file_type(self):
         return self.config["bert_token_file"]
@@ -34,16 +39,16 @@ class BertJobConfiguration:
         return self.config["training"]["num_epochs"]
 
     def get_num_workers(self):
-        return self.config['training']['num_workers']
+        return self.config["training"]["num_workers"]
 
     def get_validation_folder_path(self):
-        return self.config['validation']['path']
+        return self.config["validation"]["path"]
 
     def get_wiki_pretrain_dataset_path(self):
-        return self.config["data"]["datasets"]['wiki_pretrain_dataset']
+        return self.config["data"]["datasets"]["wiki_pretrain_dataset"]
 
     def get_book_corpus_pretrain_dataset_path(self):
-        return self.config["data"]["datasets"]['bc_pretrain_dataset']
+        return self.config["data"]["datasets"]["bc_pretrain_dataset"]
 
     def get_decay_rate(self):
         return self.config["training"]["decay_rate"]

@@ -1,3 +1,4 @@
+# flake8: noqa
 from tqdm import tqdm
 from typing import Tuple
 from random import shuffle
@@ -35,16 +36,24 @@ class TokenInstance:
 
 
 class PretrainingDataCreator:
-    def __init__(self, path, tokenizer: BertTokenizer,  max_seq_length, readin: int = 2000000, dupe_factor: int = 5, small_seq_prob: float = 0.1):
+    def __init__(
+        self,
+        path,
+        tokenizer: BertTokenizer,
+        max_seq_length,
+        readin: int = 2000000,
+        dupe_factor: int = 5,
+        small_seq_prob: float = 0.1,
+    ):
         self.dupe_factor = dupe_factor
         self.max_seq_length = max_seq_length
         self.small_seq_prob = small_seq_prob
 
         documents = []
         instances = []
-        with open(path, encoding='utf-8') as fd:
+        with open(path, encoding="utf-8") as fd:
             for i, line in enumerate(tqdm(fd)):
-                line = line.replace('\n', '')
+                line = line.replace("\n", "")
                 # Expected format (Q,T,U,S,D)
                 # query, title, url, snippet, document = line.split('\t')
                 # ! remove this following line later
@@ -82,13 +91,13 @@ class PretrainingDataCreator:
         self.__dict__.update(state)
 
     def save(self, filename):
-        with open(filename, 'wb') as outfile:
+        with open(filename, "wb") as outfile:
             pickle.dump(self, outfile)
 
     @staticmethod
     def load(filename):
         print("Loading filename {}".format(filename))
-        with open(filename, 'rb') as f:
+        with open(filename, "rb") as f:
             return pickle.load(f)
 
     def create_training_instance(self, index):
@@ -115,7 +124,7 @@ class PretrainingDataCreator:
             segment = document[i]
             current_chunk.append(segment)
             current_length += len(segment)
-            if i == len(document)-1 or current_length >= target_seq_length:
+            if i == len(document) - 1 or current_length >= target_seq_length:
                 if current_chunk:
                     # `a_end` is how many segments from `current_chunk` go into the `A`
                     # (first) sentence.
@@ -138,12 +147,13 @@ class PretrainingDataCreator:
                         # Pick a random document
                         for _ in range(10):
                             random_doc_index = random.randint(
-                                0, len(self.documents) - 1)
+                                0, len(self.documents) - 1
+                            )
                             if random_doc_index != index:
                                 break
 
                         random_doc = self.documents[random_doc_index]
-                        random_start = random.randint(0, len(random_doc)-1)
+                        random_start = random.randint(0, len(random_doc) - 1)
                         for j in range(random_start, len(random_doc)):
                             tokens_b.extend(random_doc[j])
                             if len(tokens_b) >= target_b_length:
@@ -165,8 +175,9 @@ class PretrainingDataCreator:
                     assert len(tokens_a) >= 1
                     assert len(tokens_b) >= 1
 
-                    instances.append(TokenInstance(
-                        tokens_a, tokens_b, int(is_random_next)))
+                    instances.append(
+                        TokenInstance(tokens_a, tokens_b, int(is_random_next))
+                    )
 
                 current_chunk = []
                 current_length = 0
@@ -176,24 +187,32 @@ class PretrainingDataCreator:
 
 
 class WikiNBookCorpusPretrainingDataCreator(PretrainingDataCreator):
-    def __init__(self, path, tokenizer: BertTokenizer,  max_seq_length: int = 512, readin: int = 2000000, dupe_factor: int = 6, small_seq_prob: float = 0.1):
+    def __init__(
+        self,
+        path,
+        tokenizer: BertTokenizer,
+        max_seq_length: int = 512,
+        readin: int = 2000000,
+        dupe_factor: int = 6,
+        small_seq_prob: float = 0.1,
+    ):
         self.dupe_factor = dupe_factor
         self.max_seq_length = max_seq_length
         self.small_seq_prob = small_seq_prob
 
         documents = []
         instances = []
-        with open(path, encoding='utf-8') as fd:
+        with open(path, encoding="utf-8") as fd:
             document = []
             for i, line in enumerate(tqdm(fd)):
-                line = line.replace('\n', '')
+                line = line.replace("\n", "")
                 # document = line
                 # if len(document.split("<sep>")) <= 3:
                 #     continue
                 if len(line) == 0:  # This is end of document
                     documents.append(document)
                     document = []
-                if len(line.split(' ')) > 2:
+                if len(line.split(" ")) > 2:
                     document.append(tokenizer.tokenize(line))
             if len(document) > 0:
                 documents.append(document)
@@ -212,25 +231,36 @@ class WikiNBookCorpusPretrainingDataCreator(PretrainingDataCreator):
         self.documents = None
         documents = None
 
+
 class WikiPretrainingDataCreator(PretrainingDataCreator):
-    def __init__(self, path, tokenizer: BertTokenizer,  max_seq_length: int = 512, readin: int = 2000000, dupe_factor: int = 6, small_seq_prob: float = 0.1):
+    def __init__(
+        self,
+        path,
+        tokenizer: BertTokenizer,
+        max_seq_length: int = 512,
+        readin: int = 2000000,
+        dupe_factor: int = 6,
+        small_seq_prob: float = 0.1,
+    ):
         self.dupe_factor = dupe_factor
         self.max_seq_length = max_seq_length
         self.small_seq_prob = small_seq_prob
 
         documents = []
         instances = []
-        with open(path, encoding='utf-8') as fd:
+        with open(path, encoding="utf-8") as fd:
             document = []
             for i, line in enumerate(tqdm(fd)):
-                line = line.replace('\n', '')
+                line = line.replace("\n", "")
                 # document = line
                 # if len(document.split("<sep>")) <= 3:
                 #     continue
-                if len(line) > 0 and line[:2] ==  "[[" : # This is end of document
+                if (
+                    len(line) > 0 and line[:2] == "[["
+                ):  # This is end of document
                     documents.append(document)
                     document = []
-                if len(line.split(' ')) > 2:
+                if len(line.split(" ")) > 2:
                     document.append(tokenizer.tokenize(line))
             if len(document) > 0:
                 documents.append(document)
