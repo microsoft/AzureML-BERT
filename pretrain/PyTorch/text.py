@@ -1,4 +1,3 @@
-# flake8: noqa
 import torch
 
 PAD = 0
