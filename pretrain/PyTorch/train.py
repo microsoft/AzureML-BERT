@@ -1,11 +1,9 @@
-# flake8: noqa
 from datetime import datetime
 
 import numpy as np
 import random
 import os
 import sys
-import json
 import torch
 import torch.nn as nn
 import torch.distributed as dist
@@ -14,7 +12,6 @@ from torch.utils.data.sampler import RandomSampler
 from torch.utils.data.distributed import DistributedSampler
 
 import argparse
-from tqdm import tqdm
 from checkpoint import (
     checkpoint_model,
     load_checkpoint,
@@ -34,12 +31,6 @@ from azureml_adapter import (
     get_global_size,
     get_local_size,
 )
-from sources import (
-    PretrainingDataCreator,
-    TokenInstance,
-    WikiNBookCorpusPretrainingDataCreator,
-)
-from sources import WikiPretrainingDataCreator
 from configuration import BertJobConfiguration
 
 from azureml.core.run import Run
@@ -166,8 +157,6 @@ def train(index):
 
         i += 1
         logger.info("Training on Book Corpus")
-
-    total_length = sum(datalengths)
 
     dataset_batches = []
     for i, batch_count in enumerate(batchs_per_dataset):
@@ -579,7 +568,7 @@ if __name__ == "__main__":
     if fp16:
         try:
             from apex.optimizers import FP16_Optimizer, FusedAdam
-        except:
+        except ImportError:
             raise ImportError(
                 "To use distributed and fp16 training, please install apex from the branch bertonazureml/apex at https://www.github.com/microsoft/apex."
             )
