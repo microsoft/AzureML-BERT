@@ -40,7 +40,7 @@ def parse_data(input_file, output_file):
     if not os.path.exists(output_file):
         print(input_file)
         dataset = GenericPretrainingDataCreator(
-            input_file, tokenizer, dupe_factor=6, max_seq_length=512)
+            input_file, tokenizer, dupe_factor=9, max_seq_length=512)
         dataset.save(output_file)
         print(f"Completed Pickling: {output_file}")
     else:
@@ -78,8 +78,7 @@ else:
 
 for filename in os.listdir(args.input_dir):
     input_file = os.path.join(args.input_dir, filename)
-    #outfilename = "_".join(filename.split('.')[:-1]) + ".bin"
-    outfilename = filename + ".bin"
+    outfilename = "_".join(filename.split('.')[:-1]) + ".bin"
     output_file = os.path.join(args.output_dir, outfilename)
     input_files.append(input_file)
     output_files.append(output_file)
