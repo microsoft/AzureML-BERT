@@ -1,18 +1,12 @@
-# flake8: noqa
 import torch
 import os
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import Dataset
 from enum import IntEnum
-from random import choice
 import random
 import collections
 
-from text import mask, torch_long, PAD
-from sources import (
-    PretrainingDataCreator,
-    TokenInstance,
-    WikiNBookCorpusPretrainingDataCreator,
-)
+from text import torch_long, PAD
+from sources import TokenInstance, WikiNBookCorpusPretrainingDataCreator
 from sources import WikiPretrainingDataCreator
 from pytorch_pretrained_bert.tokenization import BertTokenizer
 
