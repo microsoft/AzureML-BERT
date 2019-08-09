@@ -1,10 +1,6 @@
-# flake8: noqa
-from logger import Logger
 import torch
 import os
 from operator import itemgetter
-
-from torch import __init__
 
 
 def checkpoint_model(
@@ -51,8 +47,6 @@ def latest_checkpoint_file(reference_folder: str, no_cuda) -> str:
 
     # Extract sub-folders under the reference folder
     matching_sub_dirs = [d for d in os.listdir(reference_folder)]
-
-    logger = Logger(cuda=torch.cuda.is_available() and not no_cuda)
 
     # For each of these folders, find those that correspond
     # to the proper architecture, and that contain .tar files
