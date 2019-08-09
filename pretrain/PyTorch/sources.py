@@ -1,6 +1,4 @@
-# flake8: noqa
 from tqdm import tqdm
-from typing import Tuple
 from random import shuffle
 import pickle
 import random
