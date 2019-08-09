@@ -1,27 +1,15 @@
-# flake8: noqa
-import argparse
-import logging
-import random
-import numpy as np
-import os
 import torch
-import json
 import torch.nn as nn
-import torch.nn.functional as F
-import torch.distributed as dist
-from torch.nn import CrossEntropyLoss, MSELoss
+from torch.nn import CrossEntropyLoss
 from logger import Logger
 
 from dataset import BatchType
-from pytorch_pretrained_bert.tokenization import BertTokenizer
 from pytorch_pretrained_bert.modeling import BertModel, BertConfig
 from pytorch_pretrained_bert.modeling import (
-    BertPreTrainingHeads,
+    # BertPreTrainingHeads,
     BertPreTrainedModel,
     BertPreTrainingHeads,
-    BertLMPredictionHead,
 )
-from pytorch_pretrained_bert.file_utils import PYTORCH_PRETRAINED_BERT_CACHE
 
 
 class BertPretrainingLoss(BertPreTrainedModel):
@@ -68,7 +56,7 @@ class BertPretrainingLoss(BertPreTrainedModel):
 
 
 class MTLRouting(nn.Module):
-    """This setup is to add MultiTask Training support in BERT Training. 
+    """This setup is to add MultiTask Training support in BERT Training.
     """
 
     def __init__(self, encoder: BertModel, write_log, summary_writer):
