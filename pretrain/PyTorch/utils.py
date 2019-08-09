@@ -1,8 +1,3 @@
-# flake8: noqa
-import sys as _sys
-
-from typing import List
-from collections import _iskeyword  # type: ignore
 from tensorboardX import SummaryWriter
 import os
 
