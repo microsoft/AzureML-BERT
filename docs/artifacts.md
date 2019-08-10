@@ -29,7 +29,7 @@ Individual data files from wiki_pretrain directory are available at the followin
 * ...
 * [wikipedia_segmented_part_98.bin](https://bertonazuremlwestus2.blob.core.windows.net/public2/data/preprocessed/512/wiki_pretrain/wikipedia_segmented_part_98.bin)
 
-Use below script to transfer data to your private blob `azcopy --source "https://bertonazuremlwestus2.blob.core.windows.net/public2&sig=TmWruKqRKTmoBvZl5MBD9DazoJu9Z0Rongj0ds09%2B5Y%3D" --destination "https://<destination-storage-account-name>.blob.core.windows.net/<container-name>?<SAS token>" --recursive`. See more about [Azure Blob Shared Access Signature](https://docs.microsoft.com/en-us/azure/storage/common/storage-dotnet-shared-access-signature-part-1) and [azcopy](https://docs.microsoft.com/en-us/azure/storage/common/storage-use-azcopy-blobs).
+Use below script to transfer data to your private blob `azcopy --source "https://bertonazuremlwestus2.blob.core.windows.net/public2" --destination "https://<destination-storage-account-name>.blob.core.windows.net/<container-name>?<SAS token>" --recursive`. See more about [Azure Blob Shared Access Signature](https://docs.microsoft.com/en-us/azure/storage/common/storage-dotnet-shared-access-signature-part-1) and [azcopy](https://docs.microsoft.com/en-us/azure/storage/common/storage-use-azcopy-blobs).
 
 ## Pretrained BERT Model Checkpoints
 The models pretrained in AzureML based on the original BERT implementation are available at the following locations:
