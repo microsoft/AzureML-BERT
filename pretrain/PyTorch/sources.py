@@ -184,7 +184,7 @@ class PretrainingDataCreator:
         return instances
 
 
-class WikiNBookCorpusPretrainingDataCreator(PretrainingDataCreator):
+class GenericPretrainingDataCreator(PretrainingDataCreator):
     def __init__(
         self,
         path,

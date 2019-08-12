@@ -42,3 +42,6 @@ def get_global_size():
 
 def get_local_size():
     return int(os.environ["OMPI_COMM_WORLD_LOCAL_SIZE"])
+
+def get_world_size():
+    return int(os.environ['WORLD_SIZE'])

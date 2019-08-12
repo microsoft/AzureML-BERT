@@ -27,7 +27,7 @@ import pickle
 import sys
 sys.path.append("..")
 from pytorch_pretrained_bert.tokenization import BertTokenizer
-from dataset import TokenInstance, PretrainingDataCreator, WikiNBookCorpusPretrainingDataCreator
+from dataset import TokenInstance, PretrainingDataCreator, GenericPretrainingDataCreator
 
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 def parse_data(input_file, output_file):
     if not os.path.exists(output_file):
         print(input_file)
-        dataset = WikiNBookCorpusPretrainingDataCreator(
+        dataset = GenericPretrainingDataCreator(
             input_file, tokenizer, dupe_factor=6, max_seq_length=512)
         dataset.save(output_file)
         print(f"Completed Pickling: {output_file}")
@@ -50,7 +50,7 @@ def parse_data(input_file, output_file):
 parser = argparse.ArgumentParser(
     description="Give initial arguments for parsing")
 
-parser.add_argument("--input_dir", type=str, help="This folder contains .txt files of Wikipedia or BookCorpus Data. Each .txt file contains the text from the documents. \
+parser.add_argument("--input_dir", type=str, help="This folder contains .txt files of Wikipedia Data. Each .txt file contains the text from the documents. \
                                               It makes an assumption that each line in the file represents a single line in the document too.\
                                               A blank line represents completion of a document.")
 parser.add_argument("--output_dir", type=str, help="Path to Output Directory.")

@@ -5,8 +5,8 @@ from enum import IntEnum
 import random
 import collections
 
-from text import torch_long, PAD
-from sources import TokenInstance, WikiNBookCorpusPretrainingDataCreator
+from text import mask, torch_long, PAD
+from sources import PretrainingDataCreator, TokenInstance, GenericPretrainingDataCreator
 from sources import WikiPretrainingDataCreator
 from pytorch_pretrained_bert.tokenization import BertTokenizer
 
@@ -17,8 +17,7 @@ class BatchType(IntEnum):
 
 class PretrainDataType(IntEnum):
     WIKIPEDIA = 1
-    BOOK_CORPUS = 2
-    VALIDATION = 3
+    VALIDATION = 2
 
 
 MaskedLMInstance = collections.namedtuple(
@@ -125,11 +124,9 @@ class PreTrainingDataset(Dataset):
         path = get_random_partition(self.dir_path, index)
 
         logger.info(f"Loading Pretraining Data from {path}")
-        if (
-            data_type == PretrainDataType.WIKIPEDIA
-            or data_type == PretrainDataType.BOOK_CORPUS
-        ):
-            self.data = WikiNBookCorpusPretrainingDataCreator.load(path)
+
+        if data_type == PretrainDataType.WIKIPEDIA:
+            self.data = GenericPretrainingDataCreator.load(path)
         elif data_type == PretrainDataType.VALIDATION:
             self.data = WikiPretrainingDataCreator.load(path)
         self.len = len(self.data)

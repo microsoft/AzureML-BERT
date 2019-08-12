@@ -17,8 +17,7 @@
     },
     "data": {
         "datasets": {
-            "wiki_pretrain_dataset": "placeholder/512/wiki_pretrain",
-            "bc_pretrain_dataset": "placeholder/512/bookcorpus_pretrain"
+            "wiki_pretrain_dataset": "placeholder/512/wiki_pretrain"
         }
     },
     "training": {
