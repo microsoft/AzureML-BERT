@@ -4,4 +4,4 @@ Refer to the following instructions to build and push the docker image to Azure 
 * [Use Dockerfile in AzureML](https://github.com/Azure/AzureML-Containers#how-to-run-an-azure-ml-experiment-using-your-own-dockerfile)
 
 The Dockerfile to build the image for pretraining and finetuning is available in the following location:
-* [PyTorch](../pretrain/pytorch/docker/Dockerfile)
+* [PyTorch](../pretrain/PyTorch/docker/Dockerfile)
