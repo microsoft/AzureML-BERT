@@ -1,4 +1,3 @@
-# flake8: noqa
 # TODO: This is a copy of apex code from NVIDIA/APEX. Details to be added on the updates made here.
 
 import torch
@@ -95,13 +94,13 @@ class Reducer(object):
     Unlike :class:`DistributedDataParallel`, :class:`Reducer` will not automatically allreduce
     parameters during ``backward()``.
     Instead, :class:`Reducer` waits for the user to call `<reducer_instance>.reduce()` manually.
-    This enables, for example, delaying the allreduce to be carried out every 
+    This enables, for example, delaying the allreduce to be carried out every
     several iterations instead of every single iteration.
 
-    Like :class:`DistributedDataParallel`, :class:`Reducer` averages any tensors it allreduces 
+    Like :class:`DistributedDataParallel`, :class:`Reducer` averages any tensors it allreduces
     over the number of participating processes.
 
-    :class:`Reducer` is designed to work with the upstream launch utility script 
+    :class:`Reducer` is designed to work with the upstream launch utility script
     ``torch.distributed.launch`` with ``--nproc_per_node <= number of gpus per node``.
     When used with this launcher, :class:`Reducer` assumes 1:1 mapping of processes to GPUs.
     It also assumes that your script calls ``torch.cuda.set_device(args.rank)`` before creating the model.
@@ -144,11 +143,11 @@ class DistributedDataParallel(Module):
     easy multiprocess distributed data parallel training, similar to ``torch.nn.parallel.DistributedDataParallel``.  Parameters are broadcast across participating processes on initialization, and gradients are
     allreduced and averaged over processes during ``backward()``.
 
-    :class:`DistributedDataParallel` is optimized for use with NCCL.  It achieves high performance by 
+    :class:`DistributedDataParallel` is optimized for use with NCCL.  It achieves high performance by
     overlapping communication with computation during ``backward()`` and bucketing smaller gradient
     transfers to reduce the total number of transfers required.
 
-    :class:`DistributedDataParallel` is designed to work with the upstream launch utility script 
+    :class:`DistributedDataParallel` is designed to work with the upstream launch utility script
     ``torch.distributed.launch`` with ``--nproc_per_node <= number of gpus per node``.
     When used with this launcher, :class:`DistributedDataParallel` assumes 1:1 mapping of processes to GPUs.
     It also assumes that your script calls ``torch.cuda.set_device(args.rank)`` before creating the model.
@@ -379,7 +378,7 @@ class DistributedDataParallel(Module):
 
                     def allreduce_hook(*unused):
                         # user must explicitly specify when to do all reduce
-                        if self.need_reduction == False:
+                        if self.need_reduction is False:
                             # print("Does not need Reduction")
                             return
                         # print("Needs Reduction")
@@ -494,8 +493,8 @@ class DistributedDataParallel(Module):
         if self.retain_allreduce_buffers:
             self.allreduce_buffers = [None for _ in range(len(split_buckets))]
 
-        for i, bucket in enumerate(split_buckets):
-            allreduced = self.allreduce_maybe_retain(bucket, i)
+        # for i, bucket in enumerate(split_buckets):
+        # allreduced = self.allreduce_maybe_retain(bucket, i)
 
     def comm_ready_buckets(self, param):
         # Need to do this in every hook for compatibility with Ruberry's streaming backward PR.
