@@ -42,9 +42,6 @@ class BertJobConfiguration:
     def get_wiki_pretrain_dataset_path(self):
         return self.config["data"]["datasets"]['wiki_pretrain_dataset']
 
-    def get_book_corpus_pretrain_dataset_path(self):
-        return self.config["data"]["datasets"]['bc_pretrain_dataset']
-
     def get_decay_rate(self):
         return self.config["training"]["decay_rate"]
 
