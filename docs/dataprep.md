@@ -6,6 +6,6 @@ The following steps are to prepare Wikipedia corpus for pretraining. However, th
 2. Clone [Wikiextractor](https://github.com/attardi/wikiextractor), and run
 `python wikiextractor/WikiExtractor.py -o /out -b 1000M enwiki-latest-pages-articles.xml`.
 3. Run `python single_line_doc_file_creation.py`. This script removes html tags and empty lines and outputs to one file where each line is a paragraph.
-4. Run `python sentence_segmentation.py <input_file> <output_file>`. This script converts <input_file> to a file where each line is a sentence.
-5. Split the above output file into ~1000 files by line with `split <input_file> -l 1113000 -d <output_file_prefix>.
+4. Run `python sentence_segmentation.py <input_file> <output_file>`. This script converts <input_file> to one file where each line is a sentence.
+5. Split the above output file into ~100 files by line with `python split_data_into_files.py`.
 6. From current folder (/pytorch/pretrian/dataprep), run `python create_pretraining.py --input_dir=<input_directory> --output_dir=<output_directory> --do_lower_case=true` which will convert each file into pickled .bin file.
