@@ -11,11 +11,14 @@ def get_perf_metrics(filename):
 	with open(filename) as f:
 		datafile = f.readlines()
 		throughput = 0
-		epoch = 0
+		epoch = 1
 		time_diff=0
 		for line in datafile:
 			if 'Training epoch:' in line:
 				start_time = get_timestamp(line)
+
+				if epoch == 1:
+					training_start_time = start_time
 				epoch += 1
 			if 'Completed processing' in line:
 				end_time = get_timestamp(line)
@@ -23,6 +26,12 @@ def get_perf_metrics(filename):
 				num_seq = [int(s) for s in line[int(line.find('Completed processing')):].split() if s.isdigit()][0]
 				throughput += num_seq/time_diff
 			if 'Validation Loss' in line:
-				print('Validation loss:',float(line[int(line.find('is:'))+3:]))
+				valid_loss = float(line[int(line.find('is:'))+3:])
 		avg_throughput = throughput/float(epoch)
-		print('Num epochs:', epoch, ' Average throughput:',avg_throughput, 'sequences/second')
+		total_training_time = end_time-training_start_time
+		d = datetime(1,1,1) + total_training_time
+
+		print('Num epochs:', epoch)
+		print('Total time to train:', d.day-1,'days,', d.hour ,'hours')
+		print('Average throughput:',avg_throughput, 'sequences/second')
+		print('Final Validation Loss:', valid_loss)
