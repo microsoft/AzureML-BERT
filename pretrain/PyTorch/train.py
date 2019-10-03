@@ -500,5 +500,5 @@ if __name__ == '__main__':
                 shutil.rmtree(args.latest_cp_dir)
                 os.makedirs(args.latest_cp_dir,exist_ok=True)
                 checkpoint_model(os.path.join(args.latest_cp_dir, "training_state_checkpoint_{0:04d}.tar".format(index + 1)), model, optimizer, index, global_step)
-                best_ckp_path = os.path.join(args.best_cp_dir, "bert_encoder_epoch_{0:04d}.pt".format(index + 1))
-                model.save_bert(best_ckp_path)
+                latest_ckp_path = os.path.join(args.latest_cp_dir, "bert_encoder_epoch_{0:04d}.pt".format(index + 1))
+                model.save_bert(latest_ckp_path)
