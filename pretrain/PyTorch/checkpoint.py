@@ -44,8 +44,8 @@ def latest_checkpoint_file(reference_folder: str, no_cuda) -> str:
 
     logger = Logger(cuda=torch.cuda.is_available() and not no_cuda)
     
-    # For each of these folders, find those that correspond
-    # to the proper architecture, and that contain .tar files
+    # For each folder inside the parent folder find all files
+    # ending with .tar and extreact the last checkpoint.
     candidate_files = []
     for dir_path, dir_names, filenames in os.walk(reference_folder):
         logger.info(f"Searching for checkpoint in {reference_folder}")
