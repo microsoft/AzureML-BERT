@@ -42,21 +42,17 @@ def latest_checkpoint_file(reference_folder: str, no_cuda) -> str:
     :return: (str) Path to the most recent checkpoint tar file
     """
 
-    # Extract sub-folders under the reference folder
-    matching_sub_dirs = [d for d in os.listdir(reference_folder)]
-
     logger = Logger(cuda=torch.cuda.is_available() and not no_cuda)
     
-    # For each of these folders, find those that correspond
-    # to the proper architecture, and that contain .tar files
+    # For each folder inside the parent folder find all files
+    # ending with .tar and extreact the last checkpoint.
     candidate_files = []
-    for sub_dir in matching_sub_dirs:
-        for dir_path, dir_names, filenames in os.walk(os.path.join(reference_folder, sub_dir)):
-            if 'saved_models' in dir_path:
-                relevant_files = [f for f in filenames if f.endswith('.tar')]
-                if relevant_files:
-                    latest_file = max(relevant_files)  # assumes that checkpoint number is of format 000x
-                    candidate_files.append((dir_path, latest_file))
+    for dir_path, dir_names, filenames in os.walk(reference_folder):
+        logger.info(f"Searching for checkpoint in {reference_folder}")
+        relevant_files = [f for f in filenames if f.endswith('.tar')]
+        if relevant_files:
+            latest_file = max(relevant_files)  # assumes that checkpoint number is of format 000x
+            candidate_files.append((dir_path, latest_file))
     
     checkpoint_file = max(candidate_files, key=itemgetter(1))
     checkpoint_path = os.path.join(checkpoint_file[0], checkpoint_file[1])
