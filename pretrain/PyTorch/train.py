@@ -227,7 +227,7 @@ if __name__ == '__main__':
     parser.add_argument("--validation_path", default=None, type=str, required=True,
                         help="The blob storage directory for validation data, cache and output.")
 
-    parser.add_argument('--tokenizer_path', type=str, required=True,
+    parser.add_argument('--tokenizer_path', type=str, default=False,
                     help="Path to load the tokenizer from")
     parser.add_argument("--output_dir", default=None, type=str, required=True,
                         help="If given, model checkpoints will be saved to this directory.")
