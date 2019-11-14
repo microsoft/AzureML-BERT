@@ -5,6 +5,7 @@ import random
 import os
 import sys
 import json
+import shutil
 import torch
 import torch.nn as nn
 import torch.distributed as dist
@@ -50,7 +51,7 @@ def get_dataloader(dataset: Dataset, eval_set=False):
 def pretrain_validation(index):
     model.eval()
     dataset = PreTrainingDataset(tokenizer=tokenizer,
-                                 folder=job_config.get_validation_folder_path(),
+                                 folder=args.validation_path,
                                  logger=logger, max_seq_length=max_seq_length,
                                  index=index, data_type=PretrainDataType.VALIDATION,
                                  max_predictions_per_seq=max_predictions_per_seq,
@@ -72,7 +73,8 @@ def pretrain_validation(index):
     if check_write_log():
         summary_writer.add_scalar(f'Validation/Loss', eval_loss, index + 1)
         run.log("validation_loss", np.float(eval_loss))
-    return
+        run.log_row("validation_loss over epochs", epoch = index, val_loss = np.float(eval_loss))
+    return eval_loss
 
 
 def train(index):
@@ -85,7 +87,7 @@ def train(index):
 
     # Pretraining datasets
     wiki_pretrain_dataset = PreTrainingDataset(tokenizer=tokenizer,
-                                               folder=job_config.get_wiki_pretrain_dataset_path(),
+                                               folder=args.train_path,
                                                logger=logger, max_seq_length=max_seq_length,
                                                index=index, data_type=PretrainDataType.WIKIPEDIA,
                                                max_predictions_per_seq=max_predictions_per_seq,
@@ -123,6 +125,7 @@ def train(index):
 
     # Counter of sequences in an "epoch"
     sequences_counter = 0
+    global_step_loss = 0
 
     for step, dataset_type in enumerate(dataset_picker):
         try:
@@ -159,6 +162,7 @@ def train(index):
             else:
                 loss.backward()
 
+            global_step_loss += loss
             if (step + 1) % gradient_accumulation_steps == 0:
                 if fp16:
                     # modify learning rate with special warm up BERT uses
@@ -179,11 +183,14 @@ def train(index):
                 optimizer.step()
                 optimizer.zero_grad()
                 global_step += 1
+                if check_write_log() and (global_step%args.log_steps == 0):
+                    run.log("training_loss", np.float(global_step_loss))
+                    run.log("lr_this_step", np.float(lr_this_step))
+                    run.log_row("loss over steps", global_step = global_step, loss =  np.float(global_step_loss))
+                    run.log_row("lr over steps", global_step = global_step, lr  = np.float(lr_this_step))
+                global_step_loss = 0
         except StopIteration:
             continue
-            
-    if check_write_log():
-        run.log("training_loss", np.float(loss))
         
     logger.info("Completed {} steps".format(step))
     logger.info("Completed processing {} sequences".format(sequences_counter))
@@ -191,7 +198,9 @@ def train(index):
     # Run Validation Loss
     if max_seq_length == 512:
         logger.info(f"TRAIN BATCH SIZE: {train_batch_size}")
-        pretrain_validation(index)
+        return pretrain_validation(index)
+    else:
+        return None
 
 
 def str2bool(val):
@@ -209,10 +218,25 @@ if __name__ == '__main__':
     parser.add_argument("--config_file", "--cf",
                         help="pointer to the configuration file of the experiment", type=str, required=True)
 
-    parser.add_argument("--path", default=None, type=str, required=True,
-                        help="The blob storage directory for data, config files, cache and output.")
+    parser.add_argument("--config_file_path", default=None, type=str, required=True,
+                        help="The blob storage directory where config file is located.")
 
+    parser.add_argument("--train_path", default=None, type=str, required=True,
+                        help="The blob storage directory for train data, cache and output.")
+
+    parser.add_argument("--validation_path", default=None, type=str, required=True,
+                        help="The blob storage directory for validation data, cache and output.")
+
+    parser.add_argument('--tokenizer_path', type=str, default=False,
+                    help="Path to load the tokenizer from")
+    parser.add_argument("--output_dir", default=None, type=str, required=True,
+                        help="If given, model checkpoints will be saved to this directory.")
+    
     # Optional Params
+    parser.add_argument("--best_cp_dir", default=None, type=str,
+                        help="If given, model best checkpoint will be saved to this directory.")
+    parser.add_argument("--latest_cp_dir", default=None, type=str,
+                        help="If given, model latest checkpoint will be saved to this directory.")
     parser.add_argument("--max_seq_length", default=512, type=int,
                         help="The maximum total input sequence length after WordPiece tokenization. Sequences "
                              "longer than this will be truncated, and sequences shorter than this will be padded.")
@@ -246,7 +270,6 @@ if __name__ == '__main__':
                         type=str,
                         default='False',
                         help="Whether to use Bert Pretrain Weights or not")
-
     parser.add_argument('--loss_scale',
                         type=float,
                         default=0,
@@ -255,13 +278,31 @@ if __name__ == '__main__':
                         type=str,
                         default='False',
                         help="This is the path to the TAR file which contains model+opt state_dict() checkpointed.")
-    
     parser.add_argument('--use_multigpu_with_single_device_per_process',
                         type=str,
                         default='True',
                         help="Whether only one device is managed per process")	    
-
+    parser.add_argument('--epochs',		
+                        type=int,		
+                        default=250,		
+                        help="total number of epochs")
+    parser.add_argument('--log_steps',		
+                        type=int,		
+                        default=50,		
+                        help="logging intervals")
+    parser.add_argument('--backend',		
+                        type=str,		
+                        default='nccl',		
+                        help="reduce backend to use")
+    
     args = parser.parse_args()
+
+    if args.output_dir:
+        os.makedirs(args.output_dir, exist_ok=True)
+    if args.best_cp_dir:
+        os.makedirs(args.best_cp_dir, exist_ok=True)
+    if args.latest_cp_dir:
+        os.makedirs(args.latest_cp_dir, exist_ok=True)
 
     no_cuda = str2bool(args.no_cuda)
     fp16 = str2bool(args.fp16)
@@ -269,7 +310,6 @@ if __name__ == '__main__':
     use_pretrain = str2bool(args.use_pretrain)
     use_multigpu_with_single_device_per_process = str2bool(args.use_multigpu_with_single_device_per_process)
 
-    path= args.path
     config_file = args.config_file
     gradient_accumulation_steps = args.gradient_accumulation_steps
     train_batch_size = args.train_batch_size
@@ -296,9 +336,7 @@ if __name__ == '__main__':
     logger = Logger(cuda=torch.cuda.is_available())
 
     # # Extact config file from blob storage
-    job_config = BertJobConfiguration(config_file_path=os.path.join(path, config_file))
-    # Replace placeholder path prefix by path corresponding to "ds.path('data/bert_data/').as_mount()"
-    job_config.replace_path_placeholders(path)
+    job_config = BertJobConfiguration(config_file_path=os.path.join(args.config_file_path, config_file))
 
     job_name = job_config.get_name()
     # Setting the distributed variables
@@ -312,7 +350,7 @@ if __name__ == '__main__':
         device = torch.device("cuda", local_rank)
         n_gpu = 1
         # Initializes the distributed backend which will take care of synchronizing nodes/GPUs
-        torch.distributed.init_process_group(backend='nccl')
+        torch.distributed.init_process_group(backend=args.backend)
         if fp16:
             logger.info("16-bits distributed training is not officially supported in the version of PyTorch currently used, but it works. Refer to https://github.com/pytorch/pytorch/pull/13496 for supported version.")
             fp16 = True  #
@@ -334,10 +372,14 @@ if __name__ == '__main__':
         torch.cuda.manual_seed_all(seed)
 
     # Create an outputs/ folder in the blob storage
-    parent_dir = os.path.join(path, 'outputs', str(run.experiment.name))
-    output_dir = os.path.join(parent_dir, str(run.id))
-    os.makedirs(output_dir, exist_ok=True)
-    saved_model_path = os.path.join(output_dir, "saved_models", job_name)
+    if args.output_dir is None:
+        parent_dir = os.path.join(args.output_dir, 'outputs', str(run.experiment.name))
+        output_dir = os.path.join(parent_dir, str(run.id))
+        os.makedirs(output_dir, exist_ok=True)
+        saved_model_path = os.path.join(output_dir, "saved_models", job_name)
+        os.makedirs(saved_model_path, exist_ok=True)
+    else:
+        saved_model_path = args.output_dir
 
     summary_writer = None
     # Prepare Summary Writer and saved_models path
@@ -345,18 +387,22 @@ if __name__ == '__main__':
         #azureml.tensorboard only streams from /logs directory, therefore hardcoded
         summary_writer = get_sample_writer(
             name=job_name, base='./logs')
-        os.makedirs(saved_model_path, exist_ok=True)
 
     # Loading Tokenizer (vocabulary from blob storage, if exists)
     logger.info("Extracting the vocabulary")
-    tokenizer = BertTokenizer.from_pretrained(job_config.get_token_file_type(), cache_dir=path)
+    if args.tokenizer_path:
+        logger.info(f'Loading tokenizer from {args.tokenizer_path}')
+        tokenizer = BertTokenizer.from_pretrained(
+            args.tokenizer_path, cache_dir=args.output_dir)
+    else:
+        tokenizer = BertTokenizer.from_pretrained(job_config.get_token_file_type(), cache_dir=args.output_dir)
     logger.info("Vocabulary contains {} tokens".format(len(list(tokenizer.vocab.keys()))))
 
 
     # Loading Model
     logger.info("Initializing BertMultiTask model")
     model = BertMultiTask(job_config = job_config, use_pretrain = use_pretrain, tokenizer = tokenizer, 
-                          cache_dir = path, device = device, write_log = check_write_log(), 
+                          cache_dir = args.output_dir, device = device, write_log = check_write_log(), 
                           summary_writer = summary_writer)
 
     logger.info("Converting the input parameters")
@@ -420,7 +466,7 @@ if __name__ == '__main__':
     # if args.load_training_checkpoint is not None:
     if load_training_checkpoint != 'False':
         logger.info(f"Looking for previous training checkpoint.")
-        latest_checkpoint_path = latest_checkpoint_file(parent_dir, no_cuda)
+        latest_checkpoint_path = latest_checkpoint_file(args.load_training_checkpoint, no_cuda)
 
         logger.info(f"Restoring previous training checkpoint from {latest_checkpoint_path}")
         start_epoch, global_step = load_checkpoint(model, optimizer, latest_checkpoint_path)
@@ -429,13 +475,30 @@ if __name__ == '__main__':
 
     logger.info("Training the model")
 
-    for index in range(start_epoch, job_config.get_total_epoch_count()):
+    best_loss = None
+    for index in range(start_epoch, args.epochs):
         logger.info(f"Training epoch: {index + 1}")
         
-        train(index)
+        eval_loss = train(index)
 
         if check_write_log():
-            epoch_ckp_path = os.path.join(saved_model_path, "bert_encoder_epoch_{0:04d}.pt".format(index + 1))
-            logger.info(f"Saving checkpoint of the model from epoch {index + 1} at {epoch_ckp_path}")
-            model.save_bert(epoch_ckp_path)
-            checkpoint_model(os.path.join(saved_model_path, "training_state_checkpoint_{0:04d}.tar".format(index + 1)), model, optimizer, index, global_step)
+            if best_loss is None or eval_loss is None or eval_loss < best_loss*0.99:
+                best_loss = eval_loss
+                epoch_ckp_path = os.path.join(saved_model_path, "bert_encoder_epoch_{0:04d}.pt".format(index + 1))
+                checkpoint_model(os.path.join(saved_model_path, "training_state_checkpoint_{0:04d}.tar".format(index + 1)), model, optimizer, index, global_step)
+                logger.info(f"Saving checkpoint of the model from epoch {index + 1} at {epoch_ckp_path}")
+                model.save_bert(epoch_ckp_path)
+
+                #save best checkpoint in separate directory
+                if args.best_cp_dir:
+                    best_ckp_path = os.path.join(args.best_cp_dir, "bert_encoder_epoch_{0:04d}.pt".format(index + 1))
+                    shutil.rmtree(args.best_cp_dir)
+                    os.makedirs(args.best_cp_dir,exist_ok=True)
+                    model.save_bert(best_ckp_path)
+                
+            if args.latest_cp_dir:
+                shutil.rmtree(args.latest_cp_dir)
+                os.makedirs(args.latest_cp_dir,exist_ok=True)
+                checkpoint_model(os.path.join(args.latest_cp_dir, "training_state_checkpoint_{0:04d}.tar".format(index + 1)), model, optimizer, index, global_step)
+                latest_ckp_path = os.path.join(args.latest_cp_dir, "bert_encoder_epoch_{0:04d}.pt".format(index + 1))
+                model.save_bert(latest_ckp_path)
