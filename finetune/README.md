@@ -44,36 +44,6 @@ loss = tf.reduce_mean(per_example_loss)
 Depending on the size of the dataset, training the model on the actual dataset might be time-consuming. Azure Machine Learning Compute provides access to GPUs either for a single node or multiple nodes to accelerate the training process. Creating a cluster with one or multiple nodes on Azure Machine Learning Compute is very intuitive, as below:
 
 ```
-model = modeling.BertModel(
-     config=bert_config,
-     is_training=is_training,
-     input_ids=input_ids,
-     input_mask=input_mask,
-     token_type_ids=segment_ids,
-     use_one_hot_embeddings=use_one_hot_embeddings)
-
-logits = tf.matmul(output_layer, output_weights, transpose_b=True)
-logits = tf.nn.bias_add(logits, output_bias)
-probabilities = tf.nn.softmax(logits, axis=-1)
-log_probs = tf.nn.log_softmax(logits, axis=-1)
-one_hot_labels = tf.one_hot(labels, depth=num_labels, dtype=tf.float32)
-per_example_loss = -tf.reduce_sum(one_hot_labels * log_probs, axis=-1)
-loss = tf.reduce_mean(per_example_loss)
-
-```
-Azure Machine Learning is greatly simplifying the work involved in setting up and running a distributed training job. As you can see, scaling the job to multiple workers is done by just changing the number of nodes in the configuration and providing a distributed backend. For distributed backends, Azure Machine Learning supports popular frameworks such as TensorFlow Parameter server as well as MPI with Horovod, and it ties in with the Azure hardware such as InfiniBand to connect the different worker nodes to achieve optimal performance. We will have a follow up blogpost on how to use the distributed training capability on Azure Machine Learning service to fine-tune NLP models.
-
-For more information on how to create and set up compute targets for model training, please visit our [documentation](https://docs.microsoft.com/en-us/azure/machine-learning/service/how-to-set-up-training-targets).
-
-### **Hyper Parameter Tuning**
-
-For a given customer&#39;s specific use case, model performance depends heavily on the hyperparameter values selected. Hyperparameters can have a big search space, and exploring each option can be very expensive. Azure Machine Learning Services provide an automated machine learning service, which provides hyperparameter tuning capabilities and can search across various hyperparameter configurations to find a configuration that results in the best performance.
-
-In the provided example, random sampling is used, in which case hyperparameter values are randomly selected from the defined search space. In the example below, we explored the learning rate space from 1e-4 to 1e-6 in log uniform manner, so the learning rate might be 2 values around 1e-4, 2 values around 1e-5, and 2 values around 1e-6.
-
-Customers can also select which metric to optimize. Validation loss, accuracy score, and F1 score are some popular metrics that could be selected for optimization.
-
-```
 compute_config = AmlCompute.provisioning_configuration(vm_size='STANDARD_NC24s_v3',
                                                          min_nodes=0,
                                                          max_nodes=8)
@@ -91,6 +61,17 @@ estimator = PyTorch(source_directory=project_folder,
                  use_gpu=True)
 
 ```
+Azure Machine Learning is greatly simplifying the work involved in setting up and running a distributed training job. As you can see, scaling the job to multiple workers is done by just changing the number of nodes in the configuration and providing a distributed backend. For distributed backends, Azure Machine Learning supports popular frameworks such as TensorFlow Parameter server as well as MPI with Horovod, and it ties in with the Azure hardware such as InfiniBand to connect the different worker nodes to achieve optimal performance. We will have a follow up blogpost on how to use the distributed training capability on Azure Machine Learning service to fine-tune NLP models.
+
+For more information on how to create and set up compute targets for model training, please visit our [documentation](https://docs.microsoft.com/en-us/azure/machine-learning/service/how-to-set-up-training-targets).
+
+### **Hyper Parameter Tuning**
+
+For a given customer&#39;s specific use case, model performance depends heavily on the hyperparameter values selected. Hyperparameters can have a big search space, and exploring each option can be very expensive. Azure Machine Learning Services provide an automated machine learning service, which provides hyperparameter tuning capabilities and can search across various hyperparameter configurations to find a configuration that results in the best performance.
+
+In the provided example, random sampling is used, in which case hyperparameter values are randomly selected from the defined search space. In the example below, we explored the learning rate space from 1e-4 to 1e-6 in log uniform manner, so the learning rate might be 2 values around 1e-4, 2 values around 1e-5, and 2 values around 1e-6.
+
+Customers can also select which metric to optimize. Validation loss, accuracy score, and F1 score are some popular metrics that could be selected for optimization.
 
 For each experiment, customers can watch the progress for different hyperparameter combinations. For example, the picture below shows the mean loss over time using different hyperparameter combinations. Some of the experiments can be terminated early if the training loss doesn&#39;t meet expectations (like the top red curve).
 
