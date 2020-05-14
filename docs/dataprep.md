@@ -3,7 +3,7 @@ The following steps are to prepare Wikipedia corpus for pretraining. However, th
 
 1. Download wiki dump file from https://dumps.wikimedia.org/enwiki/latest/enwiki-latest-pages-articles.xml.bz2.  
    This is a zip file and needs to be unzipped.
-2. Clone [Wikiextractor](https://github.com/attardi/wikiextractor), and run:
+2. Clone [Wikiextractor](https://github.com/attardi/wikiextractor), and run it:
    ```
    git clone https://github.com/attardi/wikiextractor
    python3 wikiextractor/WikiExtractor.py -o out -b 1000M enwiki-latest-pages-articles.xml
@@ -32,11 +32,9 @@ The following steps are to prepare Wikipedia corpus for pretraining. However, th
    ```
    _output:_ `data_shards` directory
 6. Run:
-   ```python3 AzureML-BERT/pretrain/PyTorch/dataprep/create_pretraining.py --input_dir=data_shards --output_dir=pickled_pretrain_data --do_lower_case=true
+   ```
+   python3 AzureML-BERT/pretrain/PyTorch/dataprep/create_pretraining.py --input_dir=data_shards --output_dir=pickled_pretrain_data --do_lower_case=true
    ```
    This script will convert each file into pickled `.bin` file.  
    _output:_ `pickled_pretrain_data` directory
-
----
-
 
