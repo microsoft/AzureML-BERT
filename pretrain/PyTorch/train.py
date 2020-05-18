@@ -294,6 +294,11 @@ if __name__ == '__main__':
                         type=str,		
                         default='nccl',		
                         help="reduce backend to use")
+
+    parser.add_argument('--master_port',		
+                        type=int,		
+                        default=6105,		
+                        help="user specified master port for non-mpi job")
     
     args = parser.parse_args()
 
@@ -319,6 +324,7 @@ if __name__ == '__main__':
     max_seq_length = args.max_seq_length
     max_predictions_per_seq = args.max_predictions_per_seq
     masked_lm_prob = args.masked_lm_prob
+    master_port = args.master_port
 
     local_rank = -1
 
@@ -330,7 +336,7 @@ if __name__ == '__main__':
     print('global_size = {}'.format(global_size))
     print('local_size = {}'.format(local_size))
 
-    set_environment_variables_for_nccl_backend(local_size == global_size)
+    set_environment_variables_for_nccl_backend(local_size == global_size, master_port)
 
     # Prepare Logger
     logger = Logger(cuda=torch.cuda.is_available())
