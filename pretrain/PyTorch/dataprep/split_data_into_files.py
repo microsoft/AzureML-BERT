@@ -18,15 +18,14 @@ with open(input_file, encoding="UTF-8") as ifile:
     line_counter = 0
     shard_index = 0
     ofile = open(f"{output_file}{shard_index}.txt", "w", encoding="UTF-8")  # Open the first file
-    for line in tqdm(ifile):
-        # We take whole documents and write at least shard_size lines into a file
-        if line_counter < shard_size or (line_counter >= shard_size and line != doc_seperator):
-            ofile.write(line)
+    # Output files should not have doc_separator at the end of the file, but we accept input ending with doc_separator
+    for iline_counter, line in tqdm(enumerate(ifile, start=1)):
+        if line != doc_seperator or line_counter < shard_size:
             line_counter += 1
-        else:
+            ofile.write(line)
+        elif iline_counter < ifile_lines:
             line_counter = 0
             shard_index += 1
             ofile.close()
             ofile = open(f"{output_file}{shard_index}.txt", "w", encoding="UTF-8")
-            ofile.write(line)  # Do not forget to write this line too!
     ofile.close()  # Close the lastfile
