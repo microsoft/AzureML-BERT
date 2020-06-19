@@ -15,16 +15,18 @@ print("Input file contains", ifile_lines, "lines.")
 shard_size = ifile_lines // total_partitions
 
 with open(input_file, encoding="UTF-8") as ifile:
-    line_counter = 0
+    shard_line_counter = 0
     shard_index = 0
     ofile = open(f"{output_file}{shard_index}.txt", "w", encoding="UTF-8")  # Open the first file
     # Output files should not have doc_separator at the end of the file, but we accept input ending with doc_separator
     for iline_counter, line in tqdm(enumerate(ifile, start=1)):
-        if line != doc_seperator or line_counter < shard_size:
-            line_counter += 1
+        if line != doc_seperator or shard_line_counter < shard_size:
+            shard_line_counter += 1
             ofile.write(line)
+        # Prevent opening an empty output file or writing a doc_sep
+        # when the iteration has reached the end of the input file (iline_counter == ifile_lines)
         elif iline_counter < ifile_lines:
-            line_counter = 0
+            shard_line_counter = 0
             shard_index += 1
             ofile.close()
             ofile = open(f"{output_file}{shard_index}.txt", "w", encoding="UTF-8")
