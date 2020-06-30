@@ -69,6 +69,8 @@ for filename in os.listdir(args.input_dir):
     output_file = os.path.join(args.output_dir, outfilename)
     input_files.append(input_file)
     output_files.append(output_file)
+    # parse_data(input_file, output_file) # this line is for single core processing
 
+# parse data using multiple cores
 with Pool(processes=num_processes) as pool:
     pool.starmap(parse_data, zip(input_files, output_files))
