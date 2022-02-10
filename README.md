@@ -1,6 +1,12 @@
 # BERT on Azure Machine Learning Service
 This repo contains end-to-end recipes to [pretrain](#pretrain) and [finetune](#finetune) the [BERT](https://arxiv.org/abs/1810.04805) (Bidirectional Encoder Representations from Transformers) language representation model using [Azure Machine Learning service](https://azure.microsoft.com/en-us/services/machine-learning-service/). 
 
+
+**Udate on 2/10/2022**: 🛑OpenAI's official language model GPT-2 refactored based on watermelon using tensorflow 2.7.0T --[TF2_GPT](https://github.com/Xhs753/TF2_GPT-2)
+Pre-training is possible using the datasets in this repository (TF2_GPT-2); at the same time, the latest version of the machine learning framework tensorflow2.7.0 is used to enhance the stability of ML.Due to the use of keras API, the code readability of the model is improved, which helps readers quickly understand the model architecture of GPT-2, and can convert TF2 models to .ONNX models through ONNX model conversion to accelerate model training and deployment.
+- [TF2_GPT-2 repo](https://github.com/Xhs753/TF2_GPT-2)
+
+
 **Update on 7/7/2020**: 🛑 A more recent implementation for BERT pretraining available at https://github.com/microsoft/onnxruntime-training-examples/tree/master/nvidia-bert is significantly faster than the implementation in this repo. That implementation uses [ONNX Runtime](https://github.com/microsoft/onnxruntime) to accelerate training and it can be used in environments with GPU including Azure Machine Learning service. Details on using ONNX Runtime for training and accelerating training of Transformer models like [BERT](https://arxiv.org/abs/1810.04805) and [GPT-2](https://openai.com/blog/better-language-models/) are available in the blog at [ONNX Runtime Training Technical Deep Dive](https://techcommunity.microsoft.com/t5/azure-ai/onnx-runtime-training-technical-deep-dive/ba-p/1398310).
 
 ## BERT
